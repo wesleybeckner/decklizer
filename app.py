@@ -55,12 +55,11 @@ def FFD(s, B):
     loss = sum(remain) / np.sum(np.sum(sol)) * 100
     return sol, remain, loss
 
-def simple_genetic(s, B, iterations):
+def simple_genetic(s, B, iterations, binlim=np.inf):
     best_loss = 100
     best_sol = [[]]
     best_remain = 0
     loops = 0
-
     while True:
         loops += 1
         shuffle(s)
@@ -68,7 +67,7 @@ def simple_genetic(s, B, iterations):
         sol = [[]]
         for item in s:
             for j,free in enumerate(remain):
-                if free >= item:
+                if (free >= item) and (len(sol[j]) < binlim):
                     remain[j] -= item
                     sol[j].append(item)
                     break
@@ -81,7 +80,6 @@ def simple_genetic(s, B, iterations):
             best_sol = sol
             best_remain = remain
         if loops > iterations:
-
             break
     return best_sol, best_remain, best_loss
 
@@ -115,6 +113,8 @@ app.layout = html.Div(children=[
               dcc.Input(id='product-length', value='1035000, 945000, 958188', type='text')]),
     html.Div(["Product Neck In: ",
               dcc.Input(id='neck-in', value='8, 11, 10', type='text')]),
+    html.Div(["Max Bin Allocation: ",
+              dcc.Input(id='max-bins', value='6', type='text')]),
     html.Br(),
     html.Div(["EA Iterations: ",
               dcc.Input(id='iterations', value=1e3, type='number')]),
@@ -144,7 +144,7 @@ app.layout = html.Div(children=[
                             'backgroundColor': '#FF4136',
                             'color': 'white'
                         }
-                        for col in range(20)
+                        for col in range(10)
                     ] +
                     [
                     {
@@ -157,7 +157,7 @@ app.layout = html.Div(children=[
                         'backgroundColor': '#3D9970',
                         'color': 'white'
                     }
-                    for col in range(20)
+                    for col in range(10)
                 ] +
                 [
                 {
@@ -170,7 +170,7 @@ app.layout = html.Div(children=[
                     'backgroundColor': '#0074D9',
                     'color': 'white'
                 }
-                for col in range(20)
+                for col in range(10)
             ] +
             [
             {
@@ -183,7 +183,7 @@ app.layout = html.Div(children=[
                 'backgroundColor': '#0074D9',
                 'color': 'white'
             }
-            for col in range(20)
+            for col in range(10)
         ]
                         )),
 ])
@@ -216,9 +216,10 @@ def highlight_max_row(df):
     Input(component_id='product-length', component_property='value'),
     Input(component_id='neck-in', component_property='value'),
     Input(component_id='iterations', component_property='value'),
+    Input(component_id='max-bins', component_property='value'),
     Input('deckle-button', 'n_clicks')]
 )
-def update_output_div(B, L, wstr, lmstr, neckstr, iterations, button):
+def update_output_div(B, L, wstr, lmstr, neckstr, iterations, binlim, button):
     ctx = dash.callback_context
 
     if (ctx.triggered[0]['prop_id'] == 'deckle-button.n_clicks'):
@@ -235,8 +236,10 @@ def update_output_div(B, L, wstr, lmstr, neckstr, iterations, button):
 
         q = [math.ceil(x/L) for x in lm]
         s = BinPackingExample(w, q)
+        B = int(B)
+        binlim = int(binlim)
 
-        sol, remain, loss = simple_genetic(s, B, iterations)
+        sol, remain, loss = simple_genetic(s, B, iterations, binlim)
         for i in sol:
             i.sort()
         sol.sort()
