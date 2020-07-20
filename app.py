@@ -11,6 +11,7 @@ from random import shuffle
 from IPython.display import display
 import dash_table
 from dash.dependencies import Input, Output
+import urllib
 
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 
@@ -83,6 +84,47 @@ def simple_genetic(s, B, iterations, binlim=np.inf):
             break
     return best_sol, best_remain, best_loss
 
+def highlight_max_row(df):
+    return [
+        {
+            'if': {
+                'filter_query': '{{id}} = {}'.format(pd.Series(
+                [item for sublist in df.values for item in
+                sublist]).unique()[0]),
+                'column_id': col
+            },
+            'backgroundColor': '#3D9970',
+            'color': 'white'
+        }
+        # idxmax(axis=1) finds the max indices of each row
+        for (i, col) in enumerate(
+            df.columns
+        )
+    ]
+
+def summarize_results(sol):
+    df = pd.DataFrame(sol)
+    df = df.fillna(0)
+    dff = pd.DataFrame(df.groupby(list(df.columns)).size()).rename(columns={0: 'freq'}).reset_index()
+    master = pd.DataFrame()
+    for row in dff.index:
+        deckle = dff.loc[dff.index == row]
+        freq = deckle.freq.values[0]
+        x = (deckle[deckle.columns[:-1]].values[0]).astype(int)
+        y = np.bincount(x)
+        ii = np.nonzero(y)[0]
+        formula = np.vstack((ii,y[ii]))
+        read_out = ''
+        for i in range(formula.shape[1]-1): #for unique prods
+            if formula[0,i] != 0:
+                read_out = read_out + ("{} x {}, ".format(formula[0,i], formula[1,i]))
+        read_out = read_out + ("{} x {}".format(formula[0,-1], formula[1,-1]))
+        current = pd.DataFrame([read_out, freq]).T
+        current.columns = ['Formula', 'Doffs']
+        master = pd.concat([master, current])
+    master = master.reset_index(drop=True)
+    return master.to_json()
+
 # pre-calculations
 q = [math.ceil(x/L) for x in lm]
 s = BinPackingExample(w, q)
@@ -95,9 +137,19 @@ columns_dic= {0: 'first',
 5: 'sixth',
 6: 'seventh'}
 df = pd.DataFrame(sol)
+sol_json = df.to_json()
 # df = df.rename(columns=columns_dic)
 # assume you have a "wide-form" data frame with no index
 # see https://plotly.com/python/wide-form/ for more options
+
+HIDDEN = html.Div([
+    html.Div(id='sol-json',
+             style={'display': 'none'},
+             children=sol_json),
+    html.Div(id='summary-json',
+             style={'display': 'none'},
+             children=summarize_results(sol)),
+             ])
 
 app.layout = html.Div(children=[
     html.H1('Decklizer', style={'display': 'inline-block'}),
@@ -122,8 +174,15 @@ app.layout = html.Div(children=[
     html.Button('Optimize Deckle',
                 id='deckle-button',),
     html.Br(),
+    html.A('Save Deckle',
+                id='save-button',
+                download='deckle_pattern.csv',
+                href='',
+                target='_blank'),
+    html.Br(),
     html.Br(),
     html.Div(id='my-output'),
+    HIDDEN,
     html.Div(id='results',
         children=
         "New Doff Number: {}, Deckle Loss: {:.2f}%".format(len(sol), loss)),
@@ -188,28 +247,21 @@ app.layout = html.Div(children=[
                         )),
 ])
 
-def highlight_max_row(df):
-    return [
-        {
-            'if': {
-                'filter_query': '{{id}} = {}'.format(pd.Series(
-                [item for sublist in df.values for item in
-                sublist]).unique()[0]),
-                'column_id': col
-            },
-            'backgroundColor': '#3D9970',
-            'color': 'white'
-        }
-        # idxmax(axis=1) finds the max indices of each row
-        for (i, col) in enumerate(
-            df.columns
-        )
-    ]
+@app.callback(
+    Output('save-button', 'href'),
+    [Input('summary-json', 'children')])
+def update_download_link(sol):
+    dff = pd.read_json(sol)
+    csv_string = dff.to_csv(index=False, encoding='utf-8')
+    csv_string = "data:text/csv;charset=utf-8," + urllib.parse.quote(csv_string)
+    return csv_string
 
 @app.callback(
     [Output(component_id='results', component_property='children'),
     Output('opportunity-table', 'data'),
-    Output('opportunity-table', 'columns'),],
+    Output('opportunity-table', 'columns'),
+    Output('sol-json', 'children'),
+    Output('summary-json', 'children')],
     [Input(component_id='doff-width', component_property='value'),
     Input(component_id='doff-length', component_property='value'),
     Input(component_id='product-width', component_property='value'),
@@ -261,7 +313,9 @@ def update_output_div(B, L, wstr, lmstr, neckstr, iterations, binlim, button):
 
         return "New Doff Number: {}, Deckle Loss: {:.2f}%".format(len(sol), loss),\
             df.to_dict('rows'),\
-            [{"name": str(i), "id": str(i)} for i in df.columns]
+            [{"name": str(i), "id": str(i)} for i in df.columns],\
+            df.to_json(),\
+            summarize_results(sol)
 
 if __name__ == '__main__':
     app.run_server(debug=True)
