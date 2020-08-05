@@ -33,7 +33,7 @@ tableau_colors = ['#4E79A7', '#F28E2B', '#E15759', '#76B7B2', '#59A14F', '#EDC94
 # w = [531+8,667+11,574+10] # roll widths with Neck In
 # lm = [1035000, 945000, 958188] # material needed in LM
 
-df = pd.read_excel('../../data/berry/200721_ New Way SCH W3-W6 W14 07.20.20.xlsx',
+df = pd.read_excel('data/200721_ New Way SCH W3-W6 W14 07.20.20.xlsx',
                    sheet_name='Schedule')
 df = df.loc[df['Customer Name'] == 'P & G']
 df = df.loc[df['Description'].str.contains('SAM')]
