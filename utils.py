@@ -285,6 +285,33 @@ def data_bars_diverging(df, column, color_above='#3D9970', color_below='#FF4136'
 
     return styles
 
+def make_layout_registrar(sol, widths, neckin):
+    remove_neckin_dic = {i+j: i for i, j in zip(widths,neckin)}
+    df = pd.DataFrame(sol)
+    df = df.replace(remove_neckin_dic)
+    df = df.fillna(0)
+    dff = pd.DataFrame(df.groupby(list(df.columns)).size()).rename(columns={0: 'freq'}).reset_index()
+    master = pd.DataFrame()
+    for row in dff.index:
+        deckle = dff.loc[dff.index == row]
+        freq = deckle.freq.values[0]
+        x = (deckle[deckle.columns[:-1]].values[0]).astype(int)
+        y = np.bincount(x)
+        ii = np.nonzero(y)[0]
+        formula = np.vstack((ii,y[ii]))
+        read_out = []
+        columns = []
+        for i in range(formula.shape[1]): #for unique prods
+            if formula[0,i] != 0:
+                read_out.append(formula[1,i])
+                columns.append('{}'.format(formula[0,i]))
+        read_out.append(freq)
+        columns.append('freq')
+        current = pd.DataFrame([read_out])
+        current.columns = columns
+        master = pd.concat([master, current])
+    return master
+
 def optimize_late_orders(sol, widths, neckin, df, L):
     """
     Parameters
@@ -303,6 +330,7 @@ def optimize_late_orders(sol, widths, neckin, df, L):
     """
     extras = pd.DataFrame(np.zeros(len(widths))).T
     master2 = make_layout_registrar(sol, widths, neckin)
+    master2.columns=master2.columns.str.strip()
     extras.columns = master2.columns[:-1]
     schedule = []
     layout_pattern = 0
@@ -311,9 +339,13 @@ def optimize_late_orders(sol, widths, neckin, df, L):
         current = df.iloc[row1][['Total LM Order QTY', 'Width', 'Scheduled Ship Date']]
         doffs = math.ceil(current['Total LM Order QTY'] / L) # QTY
         width = current['Width']
+        print(width)
+        width = str(width)
         if width == old_width:
             layout_pattern -= 1
-        master2 = master2.sort_values(width, ascending=False).reset_index(drop=True)
+        print(master2.head())
+        master2 = master2.sort_values(width, ascending=False)
+        master2 = master2.reset_index(drop=True)
         target_doffs = extras.iloc[0][width]
         print(doffs, width, target_doffs)
         for row in master2.index:
@@ -335,8 +367,8 @@ def optimize_late_orders(sol, widths, neckin, df, L):
         old_width = width
         extra = target_doffs - doffs
         extras.iloc[0][width] = extra
-        print(extras)
-        clear_output(wait=True)
+        # print(extras)
+        # clear_output(wait=True)
 
     master_schedule = pd.DataFrame()
     sorted_schedule = pd.DataFrame(schedule)
