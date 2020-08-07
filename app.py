@@ -235,6 +235,9 @@ HIDDEN = html.Div([
     html.Div(id='schedule-json',
              style={'display': 'none'},
              children=schedule_json),
+    html.Div(id='deckle-schedule-json',
+             style={'display': 'none'},
+             children=schedule_json),
     html.Div(id='summary-json',
              style={'display': 'none'},
              children=summarize_results(sol, widths, neckin, B).to_json()
@@ -323,6 +326,14 @@ app.layout = html.Div(children=[
                                                     'margin-right': '40px',
                                                            }
                                                            ),
+    html.Button('Create Schedule',
+                id='schedule-button',),
+    html.Br(),
+    html.A('Save Schedule',
+                id='save-schedule',
+                download='deckle_schedule.csv',
+                href='',
+                target='_blank'),
     html.Br(),
     html.Br(),
     html.Div(id='my-output'),
@@ -353,11 +364,21 @@ def update_download_link(sol):
     return csv_string
 
 @app.callback(
+    Output('save-schedule', 'href'),
+    [Input('deckle-schedule-json', 'children')])
+def update_download_link(sol):
+    dff = pd.read_json(sol)
+    csv_string = dff.to_csv(index=False, encoding='utf-8')
+    csv_string = "data:text/csv;charset=utf-8," + urllib.parse.quote(csv_string)
+    return csv_string
+
+@app.callback(
     [Output(component_id='results', component_property='children'),
     Output('opportunity-table', 'data'),
     Output('opportunity-table', 'columns'),
     Output('sol-json', 'children'),
-    Output('summary-json', 'children')],
+    Output('summary-json', 'children'),
+    Output('deckle-schedule-json', 'children')],
     [Input(component_id='doff-width', component_property='value'),
     Input(component_id='doff-length', component_property='value'),
     Input(component_id='product-width', component_property='value'),
@@ -418,7 +439,8 @@ def update_output_div(B, L, wstr, lmstr, neckstr, binlim, widthlim, loss, option
             dff.to_dict('rows'),\
             [{"name": str(i), "id": str(i)} for i in dff.columns],\
             df.to_json(),\
-            summarize_results(sol, widths, neckin, B).to_json()
+            summarize_results(sol, widths, neckin, B).to_json(),\
+            master_schedule.to_json()
 
 if __name__ == '__main__':
     app.run_server(debug=True)
