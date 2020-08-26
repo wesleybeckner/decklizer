@@ -275,8 +275,8 @@ UPLOAD = html.Div(["Upload Schedule: ",
 
 app.layout = html.Div(children=[
     html.H1('Decklizer', style={'display': 'inline-block'}),
-    html.Img(src='assets/trump.png', style={'display': 'inline-block',
-                                            'height': '50px'}),
+    # html.Img(src='assets/trump.png', style={'display': 'inline-block',
+    #                                         'height': '50px'}),
     UPLOAD,
     html.Div(["Usable Doff Width (MM): ",
               dcc.Input(id='doff-width', value=B, type='number')]),
