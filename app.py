@@ -12,7 +12,7 @@ import copy
 import time
 from IPython.display import display, clear_output
 import dash_table
-from dash.dependencies import Input, Output
+from dash.dependencies import Input, Output, State
 import urllib
 from utils import *
 # from genetic import *
@@ -33,28 +33,42 @@ tableau_colors = ['#4E79A7', '#F28E2B', '#E15759', '#76B7B2', '#59A14F', '#EDC94
 # w = [531+8,667+11,574+10] # roll widths with Neck In
 # lm = [1035000, 945000, 958188] # material needed in LM
 
-df = pd.read_excel('data/200721_ New Way SCH W3-W6 W14 07.20.20.xlsx',
+df_input_schedule = pd.read_excel('data/200721_ New Way SCH W3-W6 W14 07.20.20.xlsx',
                    sheet_name='Schedule')
-df = df.loc[df['Customer Name'] == 'P & G']
-df = df.loc[df['Description'].str.contains('SAM')]
-df = df.loc[df['Description'].str.contains('WHITE')] #CYAN, TEAL
-df = df.loc[df['CYCLE / BUCKET'] == 'CYCLE 2']
-df = df.reset_index(drop=True)
-df['Width'] = pd.DataFrame(list(pd.DataFrame(list(df['Description'].str.split(';')))[0].str.split('UN0')))[1]
-lm = list(df.groupby('Description')['Total LM Order QTY'].sum().values)
+df_input_schedule.insert(1, 'Technology', df_input_schedule['Description'].apply(lambda x: parse_description(x, 'tech')))
+df_input_schedule.insert(2, 'Color', df_input_schedule['Description'].apply(lambda x: x.split(';')[1] if type(x) == str else None))
+df_input_schedule.insert(3, 'Width', df_input_schedule['Description'].apply(lambda x: parse_description(x, 'width')))
+df_input_schedule = df_input_schedule[[col for col in df_input_schedule.columns if 'Unnamed' not in str(col)]]
+temp = df_input_schedule[['Customer Name', 'Technology', 'Color', 'Width', 'CYCLE / BUCKET',
+                          'Description', 'Total LM Order QTY',
+                          'Scheduled Ship Date', 'Date order is complete']]
+
+customer = 'P & G'
+technology = 'SAM'
+color = 'WHITE'
+cycle = 'CYCLE 2'
+
+df_filtered = df_input_schedule.loc[df_input_schedule['Customer Name'] == customer]
+df_filtered = df_filtered.loc[df_filtered['Description'].str.contains(technology)]
+df_filtered = df_filtered.loc[df_filtered['Description'].str.contains(color)] #CYAN, TEAL
+df_filtered = df_filtered.loc[df_filtered['CYCLE / BUCKET'] == cycle]
+df_filtered.insert(0, 'Block', 1)
+
+### if index is broken, create new block
+df_filtered = df_filtered.reset_index(drop=True)
+df_filtered['Width'] = pd.DataFrame(list(pd.DataFrame(list(df_filtered
+    ['Description'].str.split(';')))[0].str.split('UN0')))[1]
+lm = list(df_filtered.groupby('Description')['Total LM Order QTY'].sum().values)
 lm = [int(i) for i in lm]
-widths = list(df.groupby('Description')['Width'].first().values.astype(int))
+widths = list(df_filtered.groupby('Description')['Width'].first().values.astype(int))
 B = 4160
 L = 17000 # df['LM putup']
 neckin = [4, 4, 5, 7, 7, 7] # 158 missing cycle 1, 4 mm knife in
 w = list(np.array(widths) + np.array(neckin))
 q = [math.ceil(x/L) for x in lm]
-
 s = BinPackingExample(w, q)
 
-schedule_json = df.to_json()
-
-
+input_schedule_json = df_filtered.to_json()
 
 # pre-calculations
 q = [math.ceil(x/L) for x in lm]
@@ -69,7 +83,8 @@ columns_dic= {0: 'first',
 6: 'seventh'}
 df = pd.DataFrame(sol)
 sol_json = df.to_json()
-df = layout_summary(sol, widths, neckin, B)
+sol_df = layout_summary(sol, widths, neckin, B)
+
 
 stuff = []
 for index, width in enumerate(widths):
@@ -83,7 +98,7 @@ for index, width in enumerate(widths):
                     'backgroundColor': '{}'.format(tableau_colors[index]),
                     'color': 'white'
                 }
-                for col in range(len(df.columns))
+                for col in range(len(sol_df.columns))
             ]
 
     )
@@ -229,15 +244,18 @@ def find_optimum(s,
 # see https://plotly.com/python/wide-form/ for more options
 
 HIDDEN = html.Div([
-    html.Div(id='sol-json',
+    html.Div(id='layout-sol-json', # the raw solution, initiates from FFD
              style={'display': 'none'},
              children=sol_json),
-    html.Div(id='schedule-json',
+    html.Div(id='input-schedule-json',
              style={'display': 'none'},
-             children=schedule_json),
+             children=input_schedule_json),
+    html.Div(id='input-schedule-processed-json',
+             style={'display': 'none'},
+             children=input_schedule_json),
     html.Div(id='deckle-schedule-json',
              style={'display': 'none'},
-             children=schedule_json),
+             children=None),
     html.Div(id='summary-json',
              style={'display': 'none'},
              children=summarize_results(sol, widths, neckin, B).to_json()
@@ -249,7 +267,7 @@ UPLOAD = html.Div(["Upload Schedule: ",
         id='upload-data',
         children=html.Div([
             'Drag and Drop or ',
-            html.A('Select Files')
+            html.A('Select File')
         ]),
         style={
             'width': '200px',
@@ -278,6 +296,32 @@ app.layout = html.Div(children=[
     # html.Img(src='assets/trump.png', style={'display': 'inline-block',
     #                                         'height': '50px'}),
     UPLOAD,
+    html.Div(
+        children=dash_table.DataTable(id='input-schedule-table',
+                            sort_action='native',
+                            columns=[{"name": str(i), "id": str(i)} for i in temp.columns],
+                            data = temp.to_dict('rows'),
+                            editable=True,
+                            filter_action="native",
+                            sort_mode="multi",
+                            column_selectable="single",
+                            row_selectable="multi",
+                            row_deletable=True,
+                            selected_columns=[],
+                            # selected_rows=[0, 1, 2],
+                            page_action="native",
+                            page_current= 0,
+                            style_table={
+                                    'maxHeight': '50ex',
+                                    'overflowY': 'scroll',
+                                    # 'width': '100%',
+                                    # 'minWidth': '100%',
+                                    'maxWidth': '1000px',
+                                }
+                            ),
+                            ),
+    html.Button('Process Bucket',
+                id='process-bucket-button',),
     html.Div(["Usable Doff Width (MM): ",
               dcc.Input(id='doff-width', value=B, type='number')]),
     html.Div(["Put Up (MM): ",
@@ -344,15 +388,91 @@ app.layout = html.Div(children=[
     html.Div(
     children=dash_table.DataTable(id='opportunity-table',
                         sort_action='native',
-                        columns=[{"name": str(i), "id": str(i)} for i in df.columns],
-                        data = df.to_dict('rows'),
+                        columns=[{"name": str(i), "id": str(i)} for i in sol_df.columns],
+                        data = sol_df.to_dict('rows'),
                         style_table={
                             'maxWidth': '1000px',},
                         style_data_conditional=(style_data_conditional
-                                                + data_bars(df, 'Doffs')
-                                                + data_bars(df, 'Loss'))
+                                                + data_bars(sol_df, 'Doffs')
+                                                + data_bars(sol_df, 'Loss'))
                         )),
 ])
+
+### callback to update customer, tech, color, cycle, and block dropdown options
+### as well as
+### fires anytime value or excel upload is fired
+### need to filter the uploaded schedule by the other dropdown values
+# @app.callback(
+#
+# )
+
+### callback to filter uploaded schedule
+### fires on button press?
+
+@app.callback(
+    [Output('input-schedule-json', 'children'),
+     Output('input-schedule-table', 'columns'),
+     Output('input-schedule-table', 'data')],
+  [Input('upload-data', 'contents'),],
+  [State('upload-data', 'filename'),
+   State('upload-data', 'last_modified')])
+def proccess_upload(contents, filename, date):
+    if contents is not None:
+        input_schedule_json = parse_contents(contents, filename, date)
+        dates = ['Scheduled Ship Date', 'Date order is complete']
+        df_input_schedule = pd.read_json(input_schedule_json,
+                                convert_dates=dates)
+        df_input_schedule.insert(1, 'Technology', df_input_schedule['Description'].apply(lambda x: parse_description(x, 'tech')))
+        df_input_schedule.insert(2, 'Color', df_input_schedule['Description'].apply(lambda x: x.split(';')[1] if type(x) == str else None))
+        df_input_schedule.insert(3, 'Width', df_input_schedule['Description'].apply(lambda x: parse_description(x, 'width')))
+        df_input_schedule = df_input_schedule[[col for col in df_input_schedule.columns if 'Unnamed' not in str(col)]]
+        temp = df_input_schedule[['Customer Name', 'Technology', 'Color', 'Width', 'CYCLE / BUCKET',
+                                  'Description', 'Total LM Order QTY',
+                                  'Scheduled Ship Date', 'Date order is complete']]
+        temp['Scheduled Ship Date'] = pd.to_datetime(temp['Scheduled Ship Date'], errors='ignore', unit='ms')
+        return [temp.to_json(),
+                [{"name": str(i), "id": str(i)} for i in temp.columns],
+                temp.to_dict('rows')]
+
+
+@app.callback(
+    [Output('input-schedule-processed-json', 'children'),
+    Output(component_id='product-width', component_property='value'),
+    Output(component_id='product-length', component_property='value'),
+    Output(component_id='neck-in', component_property='value'),],
+  [Input('input-schedule-table', 'derived_virtual_selected_rows'),
+  Input('input-schedule-table', 'derived_virtual_data'),
+  Input('process-bucket-button', 'n_clicks')])
+def filter_schedule(rows, data, button):
+    ctx = dash.callback_context
+    if (ctx.triggered[0]['prop_id'] == 'process-bucket-button.n_clicks'):
+        if (data is not None):
+            if (len(rows) == 0):
+                new_df = pd.DataFrame(data)
+            elif (len(rows) > 0):
+                new_df = pd.DataFrame(data).iloc[rows]
+            widths = list(new_df.groupby('Width')['Total LM Order QTY'].sum()
+                    .index.values.astype(int))
+            lm = list(new_df.groupby('Width')['Total LM Order QTY'].sum().values)
+            neckins = []
+            for width in widths:
+                if width < 170:
+                    neckin = 4
+                elif width < 208:
+                    neckin = 5
+                else:
+                    neckin = 7
+                neckins.append(neckin)
+            if (len(rows) == 0):
+                return [pd.DataFrame(data).to_json(),# widths, lm, neckins]
+                        str(widths).split('[')[1].split(']')[0],
+                        str(lm).split('[')[1].split(']')[0],
+                        str(neckins).split('[')[1].split(']')[0]]
+            elif (len(rows) > 0):
+                return [pd.DataFrame(data).iloc[rows].to_json(),
+                        str(widths).split('[')[1].split(']')[0],
+                        str(lm).split('[')[1].split(']')[0],
+                        str(neckins).split('[')[1].split(']')[0]]
 
 @app.callback(
     Output('save-button', 'href'),
@@ -376,7 +496,7 @@ def update_download_link(sol):
     [Output(component_id='results', component_property='children'),
     Output('opportunity-table', 'data'),
     Output('opportunity-table', 'columns'),
-    Output('sol-json', 'children'),
+    Output('layout-sol-json', 'children'),
     Output('summary-json', 'children'),
     Output('deckle-schedule-json', 'children')],
     [Input(component_id='doff-width', component_property='value'),
@@ -390,13 +510,14 @@ def update_download_link(sol):
     Input(component_id='loss-target', component_property='value'),
     Input(component_id='optimize-options', component_property='value'),
     Input('deckle-button', 'n_clicks'),
-    Input('schedule-json', 'children')
+    Input('input-schedule-processed-json', 'children')
     ]
 )
 def update_output_div(B, L, wstr, lmstr, neckstr, binlim, widthlim, loss, options,
-    button, schedule_json):
+    button, input_schedule_json):
 
-    schedule_df = pd.read_json(schedule_json)
+    schedule_df = pd.read_json(input_schedule_json)
+    print(schedule_df)
 
     ctx = dash.callback_context
     widthlim = int(widthlim)
@@ -411,7 +532,7 @@ def update_output_div(B, L, wstr, lmstr, neckstr, binlim, widthlim, loss, option
             neckin.append(int(i))
         lm = []
         for i in lmstr.split(','):
-            lm.append(int(i))
+            lm.append(int(float(i)))
         w = list(np.array(widths) + np.array(neckin))
 
         q = [math.ceil(x/L) for x in lm]
@@ -430,7 +551,7 @@ def update_output_div(B, L, wstr, lmstr, neckstr, binlim, widthlim, loss, option
         sol.sort()
 
         remove_neckin_dic = {i+j: i for i, j in zip(widths,neckin)}
-        df = pd.DataFrame(sol)
+        sol_df = pd.DataFrame(sol)
 
         dff = layout_summary(sol, widths, neckin, B)
 
@@ -438,7 +559,7 @@ def update_output_div(B, L, wstr, lmstr, neckstr, binlim, widthlim, loss, option
         return "New Doff Number: {}, Deckle Loss: {:.2f}%".format(len(sol), loss),\
             dff.to_dict('rows'),\
             [{"name": str(i), "id": str(i)} for i in dff.columns],\
-            df.to_json(),\
+            sol_df.to_json(),\
             summarize_results(sol, widths, neckin, B).to_json(),\
             master_schedule.to_json()
 

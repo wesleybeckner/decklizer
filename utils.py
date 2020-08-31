@@ -4,6 +4,42 @@ import math
 from random import shuffle
 import urllib
 import copy
+import base64
+import dash_html_components as html
+import io
+import re
+
+
+def parse_contents(contents, filename, date):
+    content_type, content_string = contents.split(',')
+
+    decoded = base64.b64decode(content_string)
+    try:
+        if 'csv' in filename:
+            # Assume that the user uploaded a CSV file
+            df = pd.read_csv(
+                io.StringIO(decoded.decode('utf-8')))
+        elif 'xls' in filename:
+            # Assume that the user uploaded an excel file
+            df = pd.read_excel(io.BytesIO(decoded))
+    except Exception as e:
+        print(e)
+        return html.Div([
+            'There was an error processing this file.'
+        ])
+    return df.to_json()
+
+def parse_description(text, grab='tech'):
+    '''
+    returns technology type from schedule description
+    '''
+    if type(text) == str:
+        match = re.match(r"([a-z]+)([0-9]+)([a-z]+0)([0-9]+)", text, re.I)
+        if match:
+            if grab == 'tech':
+                return match.groups()[0] # first value is the technology
+            elif grab == 'width':
+                return match.groups()[-1] # last value is the width
 
 def layout_summary(sol, widths, neckin, B):
     remove_neckin_dic = {i+j: i for i, j in zip(widths,neckin)}
@@ -312,7 +348,7 @@ def make_layout_registrar(sol, widths, neckin):
         master = pd.concat([master, current])
     return master
 
-def optimize_late_orders(sol, widths, neckin, df, L):
+def optimize_late_orders(sol, widths, neckin, df, L, DEBUG=False):
     """
     Parameters
     ----------
@@ -339,15 +375,18 @@ def optimize_late_orders(sol, widths, neckin, df, L):
         current = df.iloc[row1][['Total LM Order QTY', 'Width', 'Scheduled Ship Date']]
         doffs = math.ceil(current['Total LM Order QTY'] / L) # QTY
         width = current['Width']
-        print(width)
+        if DEBUG:
+            print(width)
         width = str(width)
         if width == old_width:
             layout_pattern -= 1
-        print(master2.head())
+        if DEBUG:
+            print(master2.head())
         master2 = master2.sort_values(width, ascending=False)
         master2 = master2.reset_index(drop=True)
         target_doffs = extras.iloc[0][width]
-        print(doffs, width, target_doffs)
+        if DEBUG:
+            print(doffs, width, target_doffs)
         for row in master2.index:
             layout_pattern += 1
             for count in range(master2.iloc[row]['freq'].astype(int)):
