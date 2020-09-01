@@ -348,6 +348,8 @@ app.layout = html.Div(children=[
               dcc.Input(id='max-widths', value='4', type='text')]),
     html.Div(["Deckle Loss Target (%): ",
               dcc.Input(id='loss-target', value='2', type='text')]),
+    html.Div(["Doffs per Jumbo: ",
+              dcc.Input(id='doffs-per-jumbo', value='6', type='text')]),
     html.Br(),
     # html.Div(["EA Iterations: ",
     #           dcc.Input(id='iterations', value=1e3, type='number')]),
@@ -497,8 +499,11 @@ def update_download_link(sol):
     Output('save-schedule', 'href'),
     [Input('deckle-schedule-json', 'children')])
 def update_download_link(sol):
-    dff = pd.read_json(sol)
-    csv_string = dff.to_csv(index=False, encoding='utf-8')
+    dates = ['Scheduled Ship Date', 'Completion Date']
+    dff = pd.read_json(sol, convert_dates=dates)
+    print(dff.head())
+    # dff['Completion Date'] = pd.to_datetime(dff['Completion Date'], errors='ignore', unit='ms')
+    csv_string = dff.to_csv(index=False, date_format='%y-%m-%d %H:%M:%S', encoding='utf-8')
     csv_string = "data:text/csv;charset=utf-8," + urllib.parse.quote(csv_string)
     return csv_string
 
@@ -523,13 +528,14 @@ def update_download_link(sol):
     Input('input-schedule-processed-json', 'children'),
     Input('setup-json', 'children'),
     Input('speed-json', 'children'),
+    Input('doffs-per-jumbo', 'value'),
     ]
 )
 def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss, options,
-    button, input_schedule_json, setup_json, speed_json):
+    button, input_schedule_json, setup_json, speed_json, doffs_in_jumbo, DEBUG=False):
     setup_df = pd.read_json(setup_json)
     speed_df = pd.read_json(speed_json)
-    doffs_in_jumbo = 6
+    doffs_in_jumbo = int(doffs_in_jumbo)
     schedule_df = pd.read_json(input_schedule_json)
 
 
@@ -553,6 +559,8 @@ def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss, options,
         s = BinPackingExample(w, q)
         B = int(B)
         # binlim = int(binlim)
+        if DEBUG:
+            print(widths)
 
         # sol, remain, loss = simple_genetic(s, B, binlim)
         sol, loss = find_optimum(s, B, widths, neckin,
@@ -573,13 +581,13 @@ def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss, options,
 
         ### replace with doffs_in_jumbo
         dff['Doffs'] = dff['Doffs']*doffs_in_jumbo
-
+        print(master_schedule.head())
         return "Deckle Loss: {:.2f}%".format(loss),\
             dff.to_dict('rows'),\
             [{"name": str(i), "id": str(i)} for i in dff.columns],\
             sol_df.to_json(),\
             summarize_results(sol, widths, neckin, B).to_json(),\
-            master_schedule.to_json()
+            master_schedule.to_json(date_unit='ns')
 
 if __name__ == '__main__':
     app.run_server(debug=True)
