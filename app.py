@@ -53,6 +53,7 @@ df_filtered = df_filtered.loc[df_filtered['Description'].str.contains(technology
 df_filtered = df_filtered.loc[df_filtered['Description'].str.contains(color)] #CYAN, TEAL
 df_filtered = df_filtered.loc[df_filtered['CYCLE / BUCKET'] == cycle]
 df_filtered.insert(0, 'Block', 1)
+df_filtered = df_filtered.reset_index(drop=True)
 
 ### if index is broken, create new block
 df_filtered = df_filtered.reset_index(drop=True)
@@ -61,8 +62,9 @@ df_filtered['Width'] = pd.DataFrame(list(pd.DataFrame(list(df_filtered
 lm = list(df_filtered.groupby('Description')['Total LM Order QTY'].sum().values)
 lm = [int(i) for i in lm]
 widths = list(df_filtered.groupby('Description')['Width'].first().values.astype(int))
+doffs_in_jumbo = 6
 B = 4160
-L = 17000 # df['LM putup']
+L = doff_length = 17000 * doffs_in_jumbo
 neckin = [4, 4, 5, 7, 7, 7] # 158 missing cycle 1, 4 mm knife in
 w = list(np.array(widths) + np.array(neckin))
 q = [math.ceil(x/L) for x in lm]
@@ -74,16 +76,10 @@ input_schedule_json = df_filtered.to_json()
 q = [math.ceil(x/L) for x in lm]
 s = BinPackingExample(w, q)
 sol, remain, loss = FFD(s, B)
-columns_dic= {0: 'first',
-1: 'second',
-2: 'third',
-3: 'fourth',
-4:'fifth',
-5: 'sixth',
-6: 'seventh'}
 df = pd.DataFrame(sol)
 sol_json = df.to_json()
 sol_df = layout_summary(sol, widths, neckin, B)
+sol_df['Doffs'] = sol_df['Doffs']*doffs_in_jumbo
 
 
 stuff = []
@@ -332,8 +328,8 @@ app.layout = html.Div(children=[
               dcc.Input(id='product-length', value=str(lm).split('[')[1].split(']')[0], type='text')]),
     html.Div(["Product Neck In (MM): ",
               dcc.Input(id='neck-in', value=str(neckin).split('[')[1].split(']')[0], type='text')]),
-    html.Div(["Max Number of Knives: ",
-              dcc.Input(id='max-bins', value='30', type='text')]),
+    # html.Div(["Max Number of Knives: ",
+    #           dcc.Input(id='max-bins', value='30', type='text')]),
     html.Div(["Max Widths per Doff: ",
               dcc.Input(id='max-widths', value='4', type='text')]),
     html.Div(["Deckle Loss Target (%): ",
@@ -505,7 +501,7 @@ def update_download_link(sol):
     Input(component_id='product-length', component_property='value'),
     Input(component_id='neck-in', component_property='value'),
     # Input(component_id='iterations', component_property='value'),
-    Input(component_id='max-bins', component_property='value'),
+    # Input(component_id='max-bins', component_property='value'),
     Input(component_id='max-widths', component_property='value'),
     Input(component_id='loss-target', component_property='value'),
     Input(component_id='optimize-options', component_property='value'),
@@ -513,7 +509,7 @@ def update_download_link(sol):
     Input('input-schedule-processed-json', 'children')
     ]
 )
-def update_output_div(B, L, wstr, lmstr, neckstr, binlim, widthlim, loss, options,
+def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss, options,
     button, input_schedule_json):
 
     schedule_df = pd.read_json(input_schedule_json)
@@ -538,7 +534,7 @@ def update_output_div(B, L, wstr, lmstr, neckstr, binlim, widthlim, loss, option
         q = [math.ceil(x/L) for x in lm]
         s = BinPackingExample(w, q)
         B = int(B)
-        binlim = int(binlim)
+        # binlim = int(binlim)
 
         # sol, remain, loss = simple_genetic(s, B, binlim)
         sol, loss = find_optimum(s, B, widths, neckin,
@@ -555,6 +551,8 @@ def update_output_div(B, L, wstr, lmstr, neckstr, binlim, widthlim, loss, option
 
         dff = layout_summary(sol, widths, neckin, B)
 
+        ### replace with doffs_in_jumbo
+        dff['Doffs'] = dff['Doffs']*6
 
         return "New Doff Number: {}, Deckle Loss: {:.2f}%".format(len(sol), loss),\
             dff.to_dict('rows'),\
