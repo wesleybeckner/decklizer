@@ -72,7 +72,8 @@ lm = [int(i) for i in lm]
 widths = list(df_filtered.groupby('Description')['Width'].first().values.astype(int))
 doffs_in_jumbo = 6
 B = 4160
-L = doff_length = 17000 * doffs_in_jumbo
+doff_length = 17000
+L = 17000 * doffs_in_jumbo
 neckin = [4, 4, 5, 7, 7, 7] # 158 missing cycle 1, 4 mm knife in
 w = list(np.array(widths) + np.array(neckin))
 q = [math.ceil(x/L) for x in lm]
@@ -334,8 +335,8 @@ app.layout = html.Div(children=[
                 id='process-bucket-button',),
     html.Div(["Usable Doff Width (MM): ",
               dcc.Input(id='doff-width', value=B, type='number')]),
-    html.Div(["Put Up (MM): ",
-              dcc.Input(id='doff-length', value=L, type='number')]),
+    html.Div(["Put Up (LM): ",
+              dcc.Input(id='doff-length', value=doff_length, type='number')]),
     html.Div(["Product Widths (MM): ",
               dcc.Input(id='product-width', value=str(widths).split('[')[1].split(']')[0], type='text')]),
     html.Div(["Product Length (LM): ",
@@ -503,7 +504,7 @@ def update_download_link(sol):
     dff = pd.read_json(sol, convert_dates=dates)
     print(dff.head())
     # dff['Completion Date'] = pd.to_datetime(dff['Completion Date'], errors='ignore', unit='ms')
-    csv_string = dff.to_csv(index=False, date_format='%y-%m-%d %H:%M:%S', encoding='utf-8')
+    csv_string = dff.to_csv(index=True, date_format='%y-%m-%d %H:%M:%S', encoding='utf-8')
     csv_string = "data:text/csv;charset=utf-8," + urllib.parse.quote(csv_string)
     return csv_string
 
@@ -536,6 +537,7 @@ def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss, options,
     setup_df = pd.read_json(setup_json)
     speed_df = pd.read_json(speed_json)
     doffs_in_jumbo = int(doffs_in_jumbo)
+    L = L * doffs_in_jumbo
     schedule_df = pd.read_json(input_schedule_json)
 
 
