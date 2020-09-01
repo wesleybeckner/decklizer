@@ -33,6 +33,14 @@ tableau_colors = ['#4E79A7', '#F28E2B', '#E15759', '#76B7B2', '#59A14F', '#EDC94
 # w = [531+8,667+11,574+10] # roll widths with Neck In
 # lm = [1035000, 945000, 958188] # material needed in LM
 
+setup_df = pd.read_excel('data/200725_WAVA Deckle Optimization Parameters Rev1.xlsx',
+                         sheet_name='Deckle Parameters')
+speed_df = pd.read_excel('data/200725_WAVA Deckle Optimization Parameters Rev1.xlsx',
+                         sheet_name='Product Parameters')
+
+setup_json = setup_df.to_json()
+speed_json = speed_df.to_json()
+
 df_input_schedule = pd.read_excel('data/200721_ New Way SCH W3-W6 W14 07.20.20.xlsx',
                    sheet_name='Schedule')
 df_input_schedule.insert(1, 'Technology', df_input_schedule['Description'].apply(lambda x: parse_description(x, 'tech')))
@@ -243,6 +251,12 @@ HIDDEN = html.Div([
     html.Div(id='layout-sol-json', # the raw solution, initiates from FFD
              style={'display': 'none'},
              children=sol_json),
+    html.Div(id='speed-json', # the raw solution, initiates from FFD
+             style={'display': 'none'},
+             children=speed_json),
+    html.Div(id='setup-json', # the raw solution, initiates from FFD
+             style={'display': 'none'},
+             children=setup_json),
     html.Div(id='input-schedule-json',
              style={'display': 'none'},
              children=input_schedule_json),
@@ -380,7 +394,7 @@ app.layout = html.Div(children=[
     HIDDEN,
     html.Div(id='results',
         children=
-        "New Doff Number: {}, Deckle Loss: {:.2f}%".format(len(sol), loss)),
+        "Deckle Loss: {:.2f}%".format(loss)),
     html.Div(
     children=dash_table.DataTable(id='opportunity-table',
                         sort_action='native',
@@ -506,14 +520,18 @@ def update_download_link(sol):
     Input(component_id='loss-target', component_property='value'),
     Input(component_id='optimize-options', component_property='value'),
     Input('deckle-button', 'n_clicks'),
-    Input('input-schedule-processed-json', 'children')
+    Input('input-schedule-processed-json', 'children'),
+    Input('setup-json', 'children'),
+    Input('speed-json', 'children'),
     ]
 )
 def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss, options,
-    button, input_schedule_json):
-
+    button, input_schedule_json, setup_json, speed_json):
+    setup_df = pd.read_json(setup_json)
+    speed_df = pd.read_json(speed_json)
+    doffs_in_jumbo = 6
     schedule_df = pd.read_json(input_schedule_json)
-    print(schedule_df)
+
 
     ctx = dash.callback_context
     widthlim = int(widthlim)
@@ -541,7 +559,9 @@ def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss, options,
             max_unique_products=widthlim,
             loss_target=loss)
         if options == 'Late Orders':
-            master_schedule = optimize_late_orders(sol, widths, neckin, schedule_df, L)
+            # master_schedule = optimize_late_orders(sol, widths, neckin, schedule_df, L)
+            master_schedule = optimize_schedule(sol, widths, neckin,
+                schedule_df, L, setup_df, speed_df, doffs_in_jumbo)
         for i in sol:
             i.sort()
         sol.sort()
@@ -552,9 +572,9 @@ def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss, options,
         dff = layout_summary(sol, widths, neckin, B)
 
         ### replace with doffs_in_jumbo
-        dff['Doffs'] = dff['Doffs']*6
+        dff['Doffs'] = dff['Doffs']*doffs_in_jumbo
 
-        return "New Doff Number: {}, Deckle Loss: {:.2f}%".format(len(sol), loss),\
+        return "Deckle Loss: {:.2f}%".format(loss),\
             dff.to_dict('rows'),\
             [{"name": str(i), "id": str(i)} for i in dff.columns],\
             sol_df.to_json(),\

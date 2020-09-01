@@ -8,6 +8,8 @@ import base64
 import dash_html_components as html
 import io
 import re
+from IPython.display import clear_output
+import datetime
 
 
 def parse_contents(contents, filename, date):
@@ -424,4 +426,250 @@ def optimize_late_orders(sol, widths, neckin, df, L, DEBUG=False):
         current.columns = ['Formula', 'Doffs']
         master_schedule = pd.concat([master_schedule, current])
     master_schedule = master_schedule.reset_index(drop=True)
+    return master_schedule
+
+def optimize_schedule(sol, widths, neckin, df_filtered, L, setup_df, speed_df,
+                      doffs_in_jumbo, DEBUG=False):
+
+    #####################################################
+    # Step 1: Create Schedule According to Order Sequence
+    #####################################################
+    extras = pd.DataFrame(np.zeros(len(widths))).T
+    master2 = make_layout_registrar(sol, widths, neckin)
+    master2.columns = master2.columns.str.strip()
+    if DEBUG:
+        print(master2.head())
+    extras.columns = master2.columns[:-1]
+    schedule = []
+    schedule_with_order_info = []
+    layout_pattern = 0
+    old_width = width = None
+    completed_orders = []
+
+    #### logic for jumbo rolls should go in first loop
+    for row1 in df_filtered.index:
+        clear_output(wait=True)
+        ### select schedule data
+        current_scheduled = df_filtered.iloc[row1][['Total LM Order QTY', 'Width', 'Scheduled Ship Date']]
+        current_scheduled['Order Number'] = row1+1
+        ship_date = current_scheduled['Scheduled Ship Date']
+        doffs = math.ceil(current_scheduled['Total LM Order QTY'] / L) # QTY
+        width = str(current_scheduled['Width'])
+        if DEBUG:
+            print(width)
+
+        ### check if we've entered a new product
+        ### no setup changes here, we need to see if the layout has changed
+        if width == old_width:
+            layout_pattern -= 1
+
+        ### sort by the current scheduled width in master 2
+        master2 = master2.sort_values(str(width), ascending=False)
+        master2 = master2.reset_index(drop=True)
+        if DEBUG:
+            print(master2.head())
+
+        ### calc how many new doffs need to be made from inventory
+        target_doffs = extras.iloc[0][width]
+        print(pd.DataFrame(data=[[doffs, width, target_doffs]],
+                           columns=['required doffs', 'width', 'doffs made']))
+        print(doffs, width, target_doffs)
+
+        ### only proceed if doffs are available in layout registrar
+        ### and not in inventory
+        if ((any(master2.loc[master2[width] > 0]['freq'] > 0))
+            and (target_doffs <= doffs)):
+
+        ### go through the rows in the master2 registrar and check for
+        ### layout patterns that contain our current width
+
+        ### Every row is a new layout unless the outer
+        ### loop has incremented, then only maybe is it
+        ### a new layout
+            for row in master2.index:
+
+                # if none of the width are in the layout then break out
+                if np.isnan(master2.iloc[row][width]):
+                    break
+                layout_pattern += 1
+
+                # looping through available doffs in the layout
+                for count in range(master2.iloc[row]['freq'].astype(int)):
+
+                    # add to target doffs
+                    target_doffs += master2.iloc[row][width]
+
+                    # add to number of times we've made this layout
+                    master2.at[row, 'layout number'] = layout_pattern
+
+
+                    new_layout_and_scheduled_product = pd.concat([master2.iloc[row],
+                                                                  current_scheduled])
+                    schedule_with_order_info.append(new_layout_and_scheduled_product)
+                    schedule.append(master2.iloc[row])
+                    master2.at[row, 'freq'] = master2.at[row, 'freq'] - 1
+
+                    ### Tabluate the other widths that were made on the layout
+                    for master_index in master2.iloc[row].index[:-2]:
+                        if (math.isnan(master2.iloc[row][master_index]) == False):
+                            ### tabulate extras for other widths in the layout
+                            extras.iloc[0][master_index] = extras.iloc[0][master_index] +\
+                                master2.iloc[row][master_index]
+                            completed_orders.append
+                    if target_doffs >= doffs:
+
+                        ### add to registrar of completed orders.
+                        completed_orders.append(current_scheduled['Order Number'])
+
+                        ### now that we've finished this order, we want to see if we've completed any other orders as well
+
+
+                        break
+                ### for exiting nested for loop
+                else:
+                    continue
+                break
+        old_width = width
+        extra = target_doffs - doffs
+        extras.iloc[0][width] = extra
+
+        print(extras)
+
+    sorted_schedule_with_order_info = pd.DataFrame(schedule_with_order_info)
+    sorted_schedule_with_order_info = sorted_schedule_with_order_info.reset_index(drop=True)
+    sorted_schedule = pd.DataFrame(schedule)
+    sorted_schedule = sorted_schedule.reset_index(drop=True)
+
+    #####################################################
+    # Step 2: Add Times Based on Rates/Changeovers
+    #####################################################
+    ### requires setup_df, speed_df
+
+    # slitter_speed = speed_df.loc[(speed_df['Customer Name'] == customer) &
+    #          (speed_df['Description'].str.contains(technology)) &
+    #          (speed_df['Description'].str.contains(color)), 'Slittter Speed (m/min)'].reset_index(drop=True)[0]
+    slitter_speed = 1300
+
+    # add column 'completion date/time'
+    # for row in schedule, calculate the completion time
+    sorted_schedule_with_order_info['Completion Date'] = None
+
+    ### choose starte date/time
+    start_date_time = datetime.datetime(2020, 8, 12)
+    print("start time: {}".format(start_date_time))
+
+    ### set changeover times
+    jumbo_change = setup_df.loc[setup_df['Slitter Set-up'] ==
+                                'Jumbo roll only']['Time (minutes)'].values[0]
+    jumbo_change = datetime.timedelta(minutes=jumbo_change)
+    print("jumbo change: {}".format(jumbo_change))
+    jumbo_and_knife_change = setup_df.loc[setup_df['Slitter Set-up'] ==
+                                          'AMB & Arium']['Time (minutes)'].values[0]
+    jumbo_and_knife_change = datetime.timedelta(minutes=jumbo_and_knife_change)
+    print("jumbo and knife change: {}".format(jumbo_and_knife_change))
+
+    ### print slitter speed and doff length
+    print("slitter speed (m/min): {}".format(slitter_speed))
+    print("doff length (m): {}".format(L))
+    prior_completion_date_time = start_date_time
+    match = '\d\d\d'
+    layout_columns = [i for i in sorted_schedule_with_order_info.columns if re.match(match, i)]
+
+    ### zero-out the 'prior layout' so algorithm knows jumbo + knife change
+    prior_layout = sorted_schedule_with_order_info.iloc[0][layout_columns]
+    for col in prior_layout.index:
+        prior_layout[col] = 0
+    layout_number = 0
+
+    schedule_with_change_over = pd.DataFrame()
+    ### transition times are for loading the current jumbo
+    for row in sorted_schedule_with_order_info.index:
+
+        layout = sorted_schedule_with_order_info.iloc[row][layout_columns]
+        if all(prior_layout.fillna(0) == layout.fillna(0)):
+            transition_time = jumbo_change
+        else:
+            transition_time = jumbo_and_knife_change
+            layout_number += 1
+        print("transition time: {}".format(transition_time))
+        run_time = L / slitter_speed
+        run_time = datetime.timedelta(minutes=run_time)
+        print("run time: {}".format(run_time))
+        completion_time = transition_time + run_time
+        completion_date_time = prior_completion_date_time + completion_time
+        print("completion date/time: {}".format(completion_date_time))
+
+        ### change main df
+        sorted_schedule_with_order_info['Completion Date'][row] = completion_date_time
+        sorted_schedule_with_order_info['layout number'][row] = layout_number
+
+        ### with changeover rows
+        current_changeover = pd.DataFrame(sorted_schedule_with_order_info.columns)
+        current_changeover = current_changeover.set_index(0)
+        current_changeover = current_changeover.T
+        current_changeover = current_changeover.append({'Order Number': 'Changeover'}, ignore_index=True)
+        current_changeover['Completion Date'] = prior_completion_date_time + transition_time
+        current_order = pd.DataFrame(sorted_schedule_with_order_info.iloc[row]).T
+        current_combined = current_changeover.append(current_order, sort=False, ignore_index=True)
+
+        schedule_with_change_over = pd.concat([schedule_with_change_over, current_combined])
+
+        prior_completion_date_time = completion_date_time
+        prior_layout = layout
+        clear_output(wait=True)
+
+    schedule_with_change_over = schedule_with_change_over.reset_index(drop=True)
+
+    #####################################################
+    # Step 3: Create Summary With Changeover Rows
+    #####################################################
+
+    master_schedule = pd.DataFrame()
+    unformatted_schedule = pd.DataFrame()
+    for index in schedule_with_change_over.index[1::2]: # pass through every jumbo
+        order_number = schedule_with_change_over.iloc[index]['Order Number']
+
+        ### these are columns specific to width layouts
+        match = '\d\d\d'
+        layout_columns = [i for i in schedule_with_change_over.columns if re.match(match, i)]
+
+
+        deckle_layout =  deckle_order = pd.DataFrame(schedule_with_change_over.iloc[index]).T
+
+        ### these are columns specific to order details
+        order_columns = [i for i in deckle_order.columns if (i not in layout_columns)
+                         & (i not in ['freq', 'layout number'])]
+
+        ### for order we grab the last row since this is the real 'completion date'
+        order = deckle_order[order_columns].reset_index(drop=True).iloc[-1].dropna()
+
+        ### remove widths that are in the deckle opt. but not in the layout
+        formula = deckle_layout[layout_columns].reset_index(drop=True).iloc[0].dropna()
+
+        ### number of doffs for the given layout/order
+        doffs = doffs_in_jumbo
+        read_out = ''
+        for i in range(formula.shape[0]-1): #for unique prods
+            read_out = read_out + ("{}x{} + ".format(formula.index[i],
+                                                    formula.iloc[i].astype(int)))
+        read_out = read_out + ("{}x{}".format(formula.index[-1],
+                                            formula.iloc[-1].astype(int))) #make last string w/o +
+        current = pd.DataFrame([read_out, int(doffs), order]).T
+        order = pd.DataFrame(order).T
+        order = order.reset_index(drop=True)
+        current = pd.DataFrame([read_out, int(doffs)]).T
+        current.columns = ['Formula', 'Doffs']
+        current = current.join(order)
+
+        ### add changeover info
+        current_changeover = pd.DataFrame(current.columns)
+        current_changeover = current_changeover.set_index(0)
+        current_changeover = current_changeover.T
+        current_changeover = current_changeover.append({'Order Number': 'Changeover'}, ignore_index=True)
+        current_changeover['Completion Date'] = schedule_with_change_over.iloc[index-1]['Completion Date']
+        current_combined = current_changeover.append(current, sort=False, ignore_index=True)
+        current_combined
+
+        master_schedule = pd.concat([master_schedule, current_combined])
+        master_schedule = master_schedule.reset_index(drop=True)
     return master_schedule
