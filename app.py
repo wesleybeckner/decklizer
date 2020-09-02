@@ -538,7 +538,12 @@ def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss, #options,
     speed_df = pd.read_json(speed_json)
     doffs_in_jumbo = int(doffs_in_jumbo)
     L = L * doffs_in_jumbo
-    schedule_df = pd.read_json(input_schedule_json)
+
+    dates = ['Scheduled Ship Date', 'Date order is complete']
+    # df_input_schedule = pd.read_json(input_schedule_json,
+    #                         convert_dates=dates)
+    schedule_df = pd.read_json(input_schedule_json,
+                            convert_dates=dates)
 
     ctx = dash.callback_context
     widthlim = int(widthlim)
@@ -582,7 +587,8 @@ def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss, #options,
 
         ### replace with doffs_in_jumbo
         # dff['Doffs'] = dff['Doffs']*doffs_in_jumbo
-
+        pd.options.display.max_columns = 999
+        print(master_schedule.head())
         return [master_schedule.to_json(date_unit='ns'),
         master_schedule.to_dict('rows'),\
         [{"name": str(i), "id": str(i)} for i in master_schedule.columns]]
