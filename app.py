@@ -504,7 +504,7 @@ def update_download_link(sol):
     dff = pd.read_json(sol, convert_dates=dates)
     print(dff.head())
     # dff['Completion Date'] = pd.to_datetime(dff['Completion Date'], errors='ignore', unit='ms')
-    csv_string = dff.to_csv(index=True, date_format='%y-%m-%d %H:%M:%S', encoding='utf-8')
+    csv_string = dff.to_csv(index=True, header=True, date_format='%y-%m-%d %H:%M:%S', encoding='utf-8')
     csv_string = "data:text/csv;charset=utf-8," + urllib.parse.quote(csv_string)
     return csv_string
 
