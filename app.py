@@ -211,6 +211,7 @@ app.layout = html.Div(children=[
                             ),
     html.Button('Process Bucket',
                 id='process-bucket-button',),
+    html.Br(),
     html.Div(["Usable Doff Width (MM): ",
               dcc.Input(id='doff-width', value=B, type='number')]),
     html.Div(["Put Up (LM): ",
@@ -271,25 +272,27 @@ app.layout = html.Div(children=[
         initial_visible_month=start_date_time,
         date=str(start_date_time),
     ),]),
-    html.Div(["Optimize Schedule For: ",
-    dcc.Dropdown(id='optimize-options',
-                 multi=False,
-                 options=[{'label': i, 'value': i} for i in ['Time (Knife Changes)', 'Late Orders']],
-                 placeholder="Select Cloud Dataset",
-                 value='Late Orders',
-                 className='dcc_control',
-                 style={
-                        'textAlign': 'center',
-                        'width': '200px',
-                        'margin': '10px',
-                        }
-                        ),],
-                        # className='four columns',
-                        id='optimize-options-div',
-                                                    style={
-                                                    'margin-right': '40px',
-                                                           }
-                                                           ),
+    html.Br(),
+
+    # html.Div(["Optimize Schedule For: ",
+    # dcc.Dropdown(id='optimize-options',
+    #              multi=False,
+    #              options=[{'label': i, 'value': i} for i in ['Time (Knife Changes)', 'Late Orders']],
+    #              placeholder="Select Cloud Dataset",
+    #              value='Late Orders',
+    #              className='dcc_control',
+    #              style={
+    #                     'textAlign': 'center',
+    #                     'width': '200px',
+    #                     'margin': '10px',
+    #                     }
+    #                     ),],
+    #                     # className='four columns',
+    #                     id='optimize-options-div',
+    #                                                 style={
+    #                                                 'margin-right': '40px',
+    #                                                        }
+    #                                                        ),
     html.Button('Create Schedule',
                 id='schedule-button',),
     html.Br(),
@@ -356,7 +359,8 @@ def proccess_upload(contents, filename, date):
     [Output('input-schedule-processed-json', 'children'),
     Output(component_id='product-width', component_property='value'),
     Output(component_id='product-length', component_property='value'),
-    Output(component_id='neck-in', component_property='value'),],
+    Output(component_id='neck-in', component_property='value'),
+    Output(component_id='deckle-date', component_property='date'),],
   [Input('input-schedule-table', 'derived_virtual_selected_rows'),
   Input('input-schedule-table', 'derived_virtual_data'),
   Input('process-bucket-button', 'n_clicks')])
@@ -380,16 +384,19 @@ def filter_schedule(rows, data, button):
                 else:
                     neckin = 7
                 neckins.append(neckin)
+            start_date_time = new_df['Date order is complete'][0]
             if (len(rows) == 0):
                 return [pd.DataFrame(data).to_json(),# widths, lm, neckins]
                         str(widths).split('[')[1].split(']')[0],
                         str(lm).split('[')[1].split(']')[0],
-                        str(neckins).split('[')[1].split(']')[0]]
+                        str(neckins).split('[')[1].split(']')[0],
+                        str(start_date_time)]
             elif (len(rows) > 0):
                 return [pd.DataFrame(data).iloc[rows].to_json(),
                         str(widths).split('[')[1].split(']')[0],
                         str(lm).split('[')[1].split(']')[0],
-                        str(neckins).split('[')[1].split(']')[0]]
+                        str(neckins).split('[')[1].split(']')[0],
+                        str(start_date_time)]
 
 # @app.callback(
 #     Output('save-button', 'href'),
@@ -428,7 +435,7 @@ def filter_schedule(rows, data, button):
     # Input(component_id='max-bins', component_property='value'),
     Input(component_id='max-widths', component_property='value'),
     Input(component_id='loss-target', component_property='value'),
-    Input(component_id='optimize-options', component_property='value'),
+    # Input(component_id='optimize-options', component_property='value'),
     Input('deckle-button', 'n_clicks'),
     Input('input-schedule-processed-json', 'children'),
     Input('setup-json', 'children'),
@@ -436,7 +443,7 @@ def filter_schedule(rows, data, button):
     Input('doffs-per-jumbo', 'value'),
     ]
 )
-def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss, options,
+def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss,# options,
     button, input_schedule_json, setup_json, speed_json, doffs_in_jumbo, DEBUG=False):
     setup_df = pd.read_json(setup_json)
     speed_df = pd.read_json(speed_json)
@@ -508,7 +515,7 @@ def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss, options,
     # Input(component_id='max-bins', component_property='value'),
     Input(component_id='max-widths', component_property='value'),
     Input(component_id='loss-target', component_property='value'),
-    Input(component_id='optimize-options', component_property='value'),
+    # Input(component_id='optimize-options', component_property='value'),
     Input('schedule-button', 'n_clicks'),
     Input('input-schedule-processed-json', 'children'),
     Input('setup-json', 'children'),
@@ -518,7 +525,7 @@ def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss, options,
     Input('deckle-date', 'date'),
     ]
 )
-def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss, options,
+def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss, #options,
     button, input_schedule_json, setup_json, speed_json, doffs_in_jumbo,
     sol_json, start, DEBUG=False):
 
