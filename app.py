@@ -528,8 +528,10 @@ def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss,# options,
 def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss, #options,
     button, input_schedule_json, setup_json, speed_json, doffs_in_jumbo,
     sol_json, start, DEBUG=False):
-
-    start_date = datetime.datetime.strptime(start.split('.')[0], '%Y-%m-%d %H:%M:%S')
+    if 'T0' in start:
+        start_date = datetime.datetime.strptime(start.split('.')[0], '%Y-%m-%dT0%H:%M:%S')
+    else:
+        start_date = datetime.datetime.strptime(start.split('.')[0], '%Y-%m-%d %H:%M:%S')
 
     sol_df = pd.read_json(sol_json)
     sol = sol_df.values.tolist()
