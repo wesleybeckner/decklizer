@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import dash
+import dash_auth
 import dash_core_components as dcc
 import dash_html_components as html
 import numpy as np
@@ -19,8 +20,16 @@ from utils import *
 
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 
+VALID_USERNAME_PASSWORD_PAIRS = {
+    'berrymfg': 'waynesboro'
+}
+
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 
+auth = dash_auth.BasicAuth(
+    app,
+    VALID_USERNAME_PASSWORD_PAIRS
+)
 server = app.server
 
 tableau_colors = ['#4E79A7', '#F28E2B', '#E15759', '#76B7B2', '#59A14F', '#EDC948', '#B07AA1',
@@ -56,20 +65,20 @@ technology = 'SAM'
 color = 'WHITE'
 cycle = 'CYCLE 2'
 
-df_filtered = df_input_schedule.loc[df_input_schedule['Customer Name'] == customer]
-df_filtered = df_filtered.loc[df_filtered['Description'].str.contains(technology)]
-df_filtered = df_filtered.loc[df_filtered['Description'].str.contains(color)] #CYAN, TEAL
-df_filtered = df_filtered.loc[df_filtered['CYCLE / BUCKET'] == cycle]
-df_filtered.insert(0, 'Block', 1)
-df_filtered = df_filtered.reset_index(drop=True)
+schedule_df = df_input_schedule.loc[df_input_schedule['Customer Name'] == customer]
+schedule_df = schedule_df.loc[schedule_df['Description'].str.contains(technology)]
+schedule_df = schedule_df.loc[schedule_df['Description'].str.contains(color)] #CYAN, TEAL
+schedule_df = schedule_df.loc[schedule_df['CYCLE / BUCKET'] == cycle]
+schedule_df.insert(0, 'Block', 1)
+schedule_df = schedule_df.reset_index(drop=True)
 
 ### if index is broken, create new block
-df_filtered = df_filtered.reset_index(drop=True)
-df_filtered['Width'] = pd.DataFrame(list(pd.DataFrame(list(df_filtered
+schedule_df = schedule_df.reset_index(drop=True)
+schedule_df['Width'] = pd.DataFrame(list(pd.DataFrame(list(schedule_df
     ['Description'].str.split(';')))[0].str.split('UN0')))[1]
-lm = list(df_filtered.groupby('Description')['Total LM Order QTY'].sum().values)
+lm = list(schedule_df.groupby('Description')['Total LM Order QTY'].sum().values)
 lm = [int(i) for i in lm]
-widths = list(df_filtered.groupby('Description')['Width'].first().values.astype(int))
+widths = list(schedule_df.groupby('Description')['Width'].first().values.astype(int))
 doffs_in_jumbo = 6
 B = 4160
 doff_length = 17000
@@ -78,10 +87,12 @@ neckin = [4, 4, 5, 7, 7, 7] # 158 missing cycle 1, 4 mm knife in
 w = list(np.array(widths) + np.array(neckin))
 q = [math.ceil(x/L) for x in lm]
 s = BinPackingExample(w, q)
+start_date_time = schedule_df['Date order is complete'][0]
+input_schedule_json = schedule_df.to_json()
 
-input_schedule_json = df_filtered.to_json()
-
-# pre-calculations
+################################################################################
+################ pre-calculations to populate tables on load ###################
+################################################################################
 q = [math.ceil(x/L) for x in lm]
 s = BinPackingExample(w, q)
 sol, remain, loss = FFD(s, B)
@@ -89,6 +100,8 @@ df = pd.DataFrame(sol)
 sol_json = df.to_json()
 sol_df = layout_summary(sol, widths, neckin, B)
 sol_df['Doffs'] = sol_df['Doffs']*doffs_in_jumbo
+master_schedule = optimize_schedule(sol, widths, neckin,
+    schedule_df, L, setup_df, speed_df, doffs_in_jumbo, start_date_time)
 
 
 stuff = []
@@ -108,141 +121,6 @@ for index, width in enumerate(widths):
 
     )
 style_data_conditional = [item for sublist in stuff for item in sublist]
-
-def find_optimum(s,
-                 B,
-                 widths,
-                 neckin,
-                 iterations=100,
-                 loss_target = 2,
-                 max_doff_layouts = 15,
-                 max_unique_products = 6,
-                 gene_count = 5,
-                 doff_min = 1):
-    losses = []
-    solutions = []
-    best_loss = 100
-    step = 0
-    start_time = time.time()
-
-    while True:
-        step += 1
-        shuffle(s)
-        remain = [B] #initialize list of remaining bin spaces
-        sol = [[]]
-        binlim = np.inf
-
-        for item in s:#sorted(s, reverse=True): # iter through products
-            for j,free in enumerate(remain): #
-                if (free >= item) and (len(sol[j]) < binlim): # if theres room
-                    remain[j] -= item
-                    sol[j].append(item)
-                    break
-            else: # at this step we need to double the previous (or mult. by min. doff count)
-                sol.append([item]) #starts new list in sol list
-                remain.append(B-item) #append a new bin and subtract the width of the new item
-
-        genes = []
-
-        df = pd.DataFrame(sol)
-        df = df.fillna(0)
-        dff = pd.DataFrame(df.groupby(list(df.columns)).size()).\
-            rename(columns={0: 'freq'}).reset_index()
-        dff = dff[dff.columns[:-1]]
-        dff["Loss"] = B - dff.sum(axis=1)
-        dff = dff.loc[dff.replace(0, np.nan, inplace=False).nunique(axis=1) <= max_unique_products]
-        dff = dff.loc[dff['Loss'] < 100]
-        dff = dff.sort_values('Loss').head(gene_count).reset_index(drop=True)
-
-        dff = dff[dff.columns[:-1]]
-        dff = dff.fillna(0)
-
-        for row in dff.index:
-            gene = list(dff.iloc[row].values)
-            gene = [i for i in gene if i != 0]
-            genes.append(gene)
-
-        order_remaining = copy.copy(s)
-        sol2 = []
-        gene_time = time.time() - start_time
-
-        while True:
-            backup_order_remaining = copy.copy(order_remaining)
-            try:
-                new_gene = list(choice(genes))
-            except:
-                break
-            if new_gene in sol2:
-                sol2.append(new_gene)
-                for item in new_gene:
-                    if item in order_remaining:
-                        order_remaining.remove(item)
-                    elif item == 0:
-                        pass
-                    else: # new gene over produces item
-                        order_remaining = backup_order_remaining
-                        sol2.remove(new_gene)
-                        genes.remove(new_gene)
-                        break
-            else:
-                check_pass = True
-                for mult in range(doff_min):
-
-                    for item in new_gene:
-                        if item in order_remaining:
-                            order_remaining.remove(item)
-                        elif item == 0:
-                            pass
-                        else: # new gene over produces item
-
-                            check_pass = False
-                            break
-                    else:
-
-                        continue  # only executed if the inner loop did NOT break
-                    if check_pass == False:  # only executed if the inner loop DID break
-                        order_remaining = backup_order_remaining
-                        genes.remove(new_gene)
-
-                        break
-                if check_pass == True:
-                    for mult in range(doff_min):
-                        sol2.append(new_gene)
-
-        chrome_time = time.time() - gene_time
-        #     if step > iterations:
-        #         break
-        remain2 = [B] #initialize list of remaining bin spaces
-        sol3 = [[]]
-        binlim = np.inf
-        doff_min = 2
-        for item in sorted(order_remaining, reverse=True): # iter through products
-            for j,free in enumerate(remain2): #
-                if (free >= item) and (len(sol3[j]) < binlim): # if theres room,
-                    remain2[j] -= item # and we haven't reach bimlim
-                    sol3[j].append(item)
-                    break
-            else: # at this step we need to double the previous (or mult. by min. doff count)
-                sol3.append([item]) #starts new list in sol list
-                remain2.append(B-item) #append a new bin and subtract the width of the new item
-                # subtract
-        # loss = sum(remain2) / np.sum(np.sum(sol3)) * 100
-        ffd_time = time.time() - chrome_time
-        sol_tot = sol2 + sol3
-        space_avail = len(sol_tot) * B
-        loss = (space_avail - np.sum(np.sum(sol_tot))) / space_avail * 100
-        losses.append(loss)
-        solutions.append(sol_tot)
-        if loss < best_loss:
-            best_solution = sol_tot
-            best_loss = loss
-
-        if (loss < loss_target) and \
-            (summarize_results(sol_tot, widths, neckin, B).shape[0] < 20) and \
-            (all(pd.DataFrame(sol_tot).replace(0, np.nan, inplace=False)\
-            .nunique(axis=1) <= max_unique_products)):
-            break
-    return sol_tot, loss
 
 # df = df.rename(columns=columns_dic)
 # assume you have a "wide-form" data frame with no index
@@ -319,7 +197,7 @@ app.layout = html.Div(children=[
                             row_selectable="multi",
                             row_deletable=True,
                             selected_columns=[],
-                            # selected_rows=[0, 1, 2],
+                            export_format='xlsx',
                             page_action="native",
                             page_current= 0,
                             style_table={
@@ -357,13 +235,42 @@ app.layout = html.Div(children=[
     html.Button('Optimize Deckle',
                 id='deckle-button',),
     html.Br(),
-    html.A('Save Deckle',
-                id='save-button',
-                download='deckle_pattern.csv',
-                href='',
-                target='_blank'),
-    html.Div([]),
+    # html.A('Save Deckle',
+    #             id='save-button',
+    #             download='deckle_pattern.csv',
+    #             href='',
+    #             target='_blank'),
+
     html.Br(),
+
+    html.Div(id='my-output'),
+    HIDDEN,
+    html.Div(id='results',
+        children=
+        "Deckle Loss: {:.2f}%".format(loss)),
+    html.Br(),
+    html.Div(
+    children=dash_table.DataTable(id='opportunity-table',
+                        sort_action='native',
+                        columns=[{"name": str(i), "id": str(i)} for i in sol_df.columns],
+                        data = sol_df.to_dict('rows'),
+                        export_format='xlsx',
+                        style_table={
+                            'maxWidth': '1000px',},
+                        style_data_conditional=(style_data_conditional
+                                                + data_bars(sol_df, 'Doffs')
+                                                + data_bars(sol_df, 'Loss'))
+                        )),
+    html.Br(),
+    html.Br(),
+    html.Div(["Deckle Start Date: ",
+    dcc.DatePickerSingle(
+        id='deckle-date',
+        min_date_allowed=datetime.datetime(2020, 8, 5),
+        max_date_allowed=datetime.datetime(2021, 9, 19),
+        initial_visible_month=start_date_time,
+        date=str(start_date_time),
+    ),]),
     html.Div(["Optimize Schedule For: ",
     dcc.Dropdown(id='optimize-options',
                  multi=False,
@@ -386,28 +293,25 @@ app.layout = html.Div(children=[
     html.Button('Create Schedule',
                 id='schedule-button',),
     html.Br(),
-    html.A('Save Schedule',
-                id='save-schedule',
-                download='deckle_schedule.csv',
-                href='',
-                target='_blank'),
+    # html.A('Save Schedule',
+    #             id='save-schedule',
+    #             download='deckle_schedule.csv',
+    #             href='',
+    #             target='_blank'),
     html.Br(),
-    html.Br(),
-    html.Div(id='my-output'),
-    HIDDEN,
-    html.Div(id='results',
-        children=
-        "Deckle Loss: {:.2f}%".format(loss)),
     html.Div(
-    children=dash_table.DataTable(id='opportunity-table',
+    children=dash_table.DataTable(id='deckle-schedule-table',
                         sort_action='native',
-                        columns=[{"name": str(i), "id": str(i)} for i in sol_df.columns],
-                        data = sol_df.to_dict('rows'),
+                        columns=[{"name": str(i), "id": str(i)} for i in master_schedule.columns],
+                        data = master_schedule.to_dict('rows'),
+                        export_format='xlsx',
                         style_table={
-                            'maxWidth': '1000px',},
-                        style_data_conditional=(style_data_conditional
-                                                + data_bars(sol_df, 'Doffs')
-                                                + data_bars(sol_df, 'Loss'))
+                                'maxHeight': '50ex',
+                                'overflowY': 'scroll',
+                                # 'width': '100%',
+                                # 'minWidth': '100%',
+                                'maxWidth': '1000px',
+                            },
                         )),
 ])
 
@@ -466,7 +370,7 @@ def filter_schedule(rows, data, button):
                 new_df = pd.DataFrame(data).iloc[rows]
             widths = list(new_df.groupby('Width')['Total LM Order QTY'].sum()
                     .index.values.astype(int))
-            lm = list(new_df.groupby('Width')['Total LM Order QTY'].sum().values)
+            lm = [round(i) for i in list(new_df.groupby('Width')['Total LM Order QTY'].sum().values)]
             neckins = []
             for width in widths:
                 if width < 170:
@@ -487,26 +391,25 @@ def filter_schedule(rows, data, button):
                         str(lm).split('[')[1].split(']')[0],
                         str(neckins).split('[')[1].split(']')[0]]
 
-@app.callback(
-    Output('save-button', 'href'),
-    [Input('summary-json', 'children')])
-def update_download_link(sol):
-    dff = pd.read_json(sol)
-    csv_string = dff.to_csv(index=False, encoding='utf-8')
-    csv_string = "data:text/csv;charset=utf-8," + urllib.parse.quote(csv_string)
-    return csv_string
-
-@app.callback(
-    Output('save-schedule', 'href'),
-    [Input('deckle-schedule-json', 'children')])
-def update_download_link(sol):
-    dates = ['Scheduled Ship Date', 'Completion Date']
-    dff = pd.read_json(sol, convert_dates=dates)
-    print(dff.head())
-    # dff['Completion Date'] = pd.to_datetime(dff['Completion Date'], errors='ignore', unit='ms')
-    csv_string = dff.to_csv(index=True, header=True, date_format='%y-%m-%d %H:%M:%S', encoding='utf-8')
-    csv_string = "data:text/csv;charset=utf-8," + urllib.parse.quote(csv_string)
-    return csv_string
+# @app.callback(
+#     Output('save-button', 'href'),
+#     [Input('summary-json', 'children')])
+# def update_download_link(sol):
+#     dff = pd.read_json(sol)
+#     csv_string = dff.to_csv(index=False, encoding='utf-8')
+#     csv_string = "data:text/csv;charset=utf-8," + urllib.parse.quote(csv_string)
+#     return csv_string
+#
+# @app.callback(
+#     Output('save-schedule', 'href'),
+#     [Input('deckle-schedule-json', 'children')])
+# def update_download_link(sol):
+#     dates = ['Scheduled Ship Date', 'Completion Date']
+#     dff = pd.read_json(sol, convert_dates=dates)
+#     # dff['Completion Date'] = pd.to_datetime(dff['Completion Date'], errors='ignore', unit='ms')
+#     csv_string = dff.to_csv(index=True, header=True, date_format='%y-%m-%d %H:%M:%S', encoding='utf-8')
+#     csv_string = "data:text/csv;charset=utf-8," + urllib.parse.quote(csv_string)
+#     return csv_string
 
 @app.callback(
     [Output(component_id='results', component_property='children'),
@@ -514,7 +417,8 @@ def update_download_link(sol):
     Output('opportunity-table', 'columns'),
     Output('layout-sol-json', 'children'),
     Output('summary-json', 'children'),
-    Output('deckle-schedule-json', 'children')],
+    # Output('deckle-schedule-json', 'children'),
+    ],
     [Input(component_id='doff-width', component_property='value'),
     Input(component_id='doff-length', component_property='value'),
     Input(component_id='product-width', component_property='value'),
@@ -568,10 +472,10 @@ def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss, options,
         sol, loss = find_optimum(s, B, widths, neckin,
             max_unique_products=widthlim,
             loss_target=loss)
-        if options == 'Late Orders':
+        # if options == 'Late Orders':
             # master_schedule = optimize_late_orders(sol, widths, neckin, schedule_df, L)
-            master_schedule = optimize_schedule(sol, widths, neckin,
-                schedule_df, L, setup_df, speed_df, doffs_in_jumbo)
+            # master_schedule = optimize_schedule(sol, widths, neckin,
+            #     schedule_df, L, setup_df, speed_df, doffs_in_jumbo)
         for i in sol:
             i.sort()
         sol.sort()
@@ -583,13 +487,98 @@ def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss, options,
 
         ### replace with doffs_in_jumbo
         dff['Doffs'] = dff['Doffs']*doffs_in_jumbo
-        print(master_schedule.head())
+
         return "Deckle Loss: {:.2f}%".format(loss),\
             dff.to_dict('rows'),\
             [{"name": str(i), "id": str(i)} for i in dff.columns],\
             sol_df.to_json(),\
-            summarize_results(sol, widths, neckin, B).to_json(),\
-            master_schedule.to_json(date_unit='ns')
+            summarize_results(sol, widths, neckin, B).to_json()#,\
+            # master_schedule.to_json(date_unit='ns')
+
+@app.callback(
+    [Output('deckle-schedule-json', 'children'),
+    Output('deckle-schedule-table', 'data'),
+    Output('deckle-schedule-table', 'columns')],
+    [Input(component_id='doff-width', component_property='value'),
+    Input(component_id='doff-length', component_property='value'),
+    Input(component_id='product-width', component_property='value'),
+    Input(component_id='product-length', component_property='value'),
+    Input(component_id='neck-in', component_property='value'),
+    # Input(component_id='iterations', component_property='value'),
+    # Input(component_id='max-bins', component_property='value'),
+    Input(component_id='max-widths', component_property='value'),
+    Input(component_id='loss-target', component_property='value'),
+    Input(component_id='optimize-options', component_property='value'),
+    Input('schedule-button', 'n_clicks'),
+    Input('input-schedule-processed-json', 'children'),
+    Input('setup-json', 'children'),
+    Input('speed-json', 'children'),
+    Input('doffs-per-jumbo', 'value'),
+    Input('layout-sol-json', 'children'),
+    Input('deckle-date', 'date'),
+    ]
+)
+def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss, options,
+    button, input_schedule_json, setup_json, speed_json, doffs_in_jumbo,
+    sol_json, start, DEBUG=False):
+
+    start_date = datetime.datetime.strptime(start.split('.')[0], '%Y-%m-%d %H:%M:%S')
+
+    sol_df = pd.read_json(sol_json)
+    sol = sol_df.values.tolist()
+    sol = [[j for j in i if j > 0] for i in sol]
+    setup_df = pd.read_json(setup_json)
+    speed_df = pd.read_json(speed_json)
+    doffs_in_jumbo = int(doffs_in_jumbo)
+    L = L * doffs_in_jumbo
+    schedule_df = pd.read_json(input_schedule_json)
+
+    ctx = dash.callback_context
+    widthlim = int(widthlim)
+    loss = float(loss)
+
+    if (ctx.triggered[0]['prop_id'] == 'schedule-button.n_clicks'):
+        widths = []
+        for i in wstr.split(','):
+            widths.append(int(i))
+        neckin = []
+        for i in neckstr.split(','):
+            neckin.append(int(i))
+        lm = []
+        for i in lmstr.split(','):
+            lm.append(int(float(i)))
+        w = list(np.array(widths) + np.array(neckin))
+
+        q = [math.ceil(x/L) for x in lm]
+        s = BinPackingExample(w, q)
+        B = int(B)
+        # binlim = int(binlim)
+        if DEBUG:
+            print(widths)
+
+        # sol, remain, loss = simple_genetic(s, B, binlim)
+        # sol, loss = find_optimum(s, B, widths, neckin,
+        #     max_unique_products=widthlim,
+        #     loss_target=loss)
+        # if options == 'Late Orders':
+            # master_schedule = optimize_late_orders(sol, widths, neckin, schedule_df, L)
+        master_schedule = optimize_schedule(sol, widths, neckin,
+            schedule_df, L, setup_df, speed_df, doffs_in_jumbo, start_date)
+        # for i in sol:
+        #     i.sort()
+        # sol.sort()
+
+        # remove_neckin_dic = {i+j: i for i, j in zip(widths,neckin)}
+        # sol_df = pd.DataFrame(sol)
+        #
+        # dff = layout_summary(sol, widths, neckin, B)
+
+        ### replace with doffs_in_jumbo
+        # dff['Doffs'] = dff['Doffs']*doffs_in_jumbo
+
+        return [master_schedule.to_json(date_unit='ns'),
+        master_schedule.to_dict('rows'),\
+        [{"name": str(i), "id": str(i)} for i in master_schedule.columns]]
 
 if __name__ == '__main__':
     app.run_server(debug=True)
