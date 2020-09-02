@@ -102,8 +102,6 @@ sol_df = layout_summary(sol, widths, neckin, B)
 sol_df['Doffs'] = sol_df['Doffs']*doffs_in_jumbo
 master_schedule = optimize_schedule(sol, widths, neckin,
     schedule_df, L, setup_df, speed_df, doffs_in_jumbo, start_date_time)
-
-
 stuff = []
 for index, width in enumerate(widths):
     stuff.append(
@@ -121,6 +119,10 @@ for index, width in enumerate(widths):
 
     )
 style_data_conditional = [item for sublist in stuff for item in sublist]
+################################################################################
+################ pre-calculations to populate tables on load ###################
+################################################################################
+
 
 # df = df.rename(columns=columns_dic)
 # assume you have a "wide-form" data frame with no index
@@ -424,6 +426,7 @@ def filter_schedule(rows, data, button):
     Output('opportunity-table', 'columns'),
     Output('layout-sol-json', 'children'),
     Output('summary-json', 'children'),
+    Output('opportunity-table', 'style_data_conditional'),
     # Output('deckle-schedule-json', 'children'),
     ],
     [Input(component_id='doff-width', component_property='value'),
@@ -495,11 +498,32 @@ def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss,# options,
         ### replace with doffs_in_jumbo
         dff['Doffs'] = dff['Doffs']*doffs_in_jumbo
 
+        stuff = []
+        for index, width in enumerate(widths):
+            stuff.append(
+                [
+                        {
+                            'if': {
+                                'filter_query': '{{{}}} = {}'.format(col, width),
+                                'column_id': str(col)
+                            },
+                            'backgroundColor': '{}'.format(tableau_colors[index]),
+                            'color': 'white'
+                        }
+                        for col in range(len(dff.columns))
+                    ]
+
+            )
+        style_data_conditional = [item for sublist in stuff for item in sublist]
+
         return "Deckle Loss: {:.2f}%".format(loss),\
             dff.to_dict('rows'),\
             [{"name": str(i), "id": str(i)} for i in dff.columns],\
             sol_df.to_json(),\
-            summarize_results(sol, widths, neckin, B).to_json()#,\
+            summarize_results(sol, widths, neckin, B).to_json(),\
+            (style_data_conditional
+                                    + data_bars(dff, 'Doffs')
+                                    + data_bars(dff, 'Loss'))
             # master_schedule.to_json(date_unit='ns')
 
 @app.callback(
