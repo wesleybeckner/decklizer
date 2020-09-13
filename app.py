@@ -71,6 +71,7 @@ schedule_df = schedule_df.loc[schedule_df['Description'].str.contains(color)] #C
 schedule_df = schedule_df.loc[schedule_df['CYCLE / BUCKET'] == cycle]
 schedule_df.insert(0, 'Block', 1)
 schedule_df = schedule_df.reset_index(drop=True)
+schedule_df['Order Number'] = schedule_df.index + 1
 
 ### if index is broken, create new block
 schedule_df = schedule_df.reset_index(drop=True)
@@ -228,6 +229,8 @@ app.layout = html.Div(children=[
     #           dcc.Input(id='max-bins', value='30', type='text')]),
     html.Div(["Max Widths per Doff: ",
               dcc.Input(id='max-widths', value='4', type='text')]),
+    html.Div(["Max Layouts: ",
+              dcc.Input(id='max-layouts', value=20, type='number')]),
     html.Div(["Deckle Loss Target (%): ",
               dcc.Input(id='loss-target', value='2', type='text')]),
     html.Div(["Doffs per Jumbo: ",
@@ -276,25 +279,25 @@ app.layout = html.Div(children=[
     ),]),
     html.Br(),
 
-    # html.Div(["Optimize Schedule For: ",
-    # dcc.Dropdown(id='optimize-options',
-    #              multi=False,
-    #              options=[{'label': i, 'value': i} for i in ['Time (Knife Changes)', 'Late Orders']],
-    #              placeholder="Select Cloud Dataset",
-    #              value='Late Orders',
-    #              className='dcc_control',
-    #              style={
-    #                     'textAlign': 'center',
-    #                     'width': '200px',
-    #                     'margin': '10px',
-    #                     }
-    #                     ),],
-    #                     # className='four columns',
-    #                     id='optimize-options-div',
-    #                                                 style={
-    #                                                 'margin-right': '40px',
-    #                                                        }
-    #                                                        ),
+    html.Div(["Optimize Schedule For: ",
+    dcc.Dropdown(id='optimize-deckle-schedule-options',
+                 multi=False,
+                 options=[{'label': i, 'value': i} for i in ['Time (Knife Changes)', 'Late Orders']],
+                 placeholder="Select Cloud Dataset",
+                 value='Late Orders',
+                 className='dcc_control',
+                 style={
+                        'textAlign': 'center',
+                        'width': '200px',
+                        'margin': '10px',
+                        }
+                        ),],
+                        # className='four columns',
+                        id='optimize-deckle-schedule-options-div',
+                                                    style={
+                                                    'margin-right': '40px',
+                                                           }
+                                                           ),
     html.Button('Create Schedule',
                 id='schedule-button',),
     html.Br(),
@@ -400,26 +403,6 @@ def filter_schedule(rows, data, button):
                         str(neckins).split('[')[1].split(']')[0],
                         str(start_date_time)]
 
-# @app.callback(
-#     Output('save-button', 'href'),
-#     [Input('summary-json', 'children')])
-# def update_download_link(sol):
-#     dff = pd.read_json(sol)
-#     csv_string = dff.to_csv(index=False, encoding='utf-8')
-#     csv_string = "data:text/csv;charset=utf-8," + urllib.parse.quote(csv_string)
-#     return csv_string
-#
-# @app.callback(
-#     Output('save-schedule', 'href'),
-#     [Input('deckle-schedule-json', 'children')])
-# def update_download_link(sol):
-#     dates = ['Scheduled Ship Date', 'Completion Date']
-#     dff = pd.read_json(sol, convert_dates=dates)
-#     # dff['Completion Date'] = pd.to_datetime(dff['Completion Date'], errors='ignore', unit='ms')
-#     csv_string = dff.to_csv(index=True, header=True, date_format='%y-%m-%d %H:%M:%S', encoding='utf-8')
-#     csv_string = "data:text/csv;charset=utf-8," + urllib.parse.quote(csv_string)
-#     return csv_string
-
 @app.callback(
     [Output(component_id='results', component_property='children'),
     Output('opportunity-table', 'data'),
@@ -427,27 +410,25 @@ def filter_schedule(rows, data, button):
     Output('layout-sol-json', 'children'),
     Output('summary-json', 'children'),
     Output('opportunity-table', 'style_data_conditional'),
-    # Output('deckle-schedule-json', 'children'),
     ],
     [Input(component_id='doff-width', component_property='value'),
     Input(component_id='doff-length', component_property='value'),
     Input(component_id='product-width', component_property='value'),
     Input(component_id='product-length', component_property='value'),
     Input(component_id='neck-in', component_property='value'),
-    # Input(component_id='iterations', component_property='value'),
-    # Input(component_id='max-bins', component_property='value'),
     Input(component_id='max-widths', component_property='value'),
     Input(component_id='loss-target', component_property='value'),
-    # Input(component_id='optimize-options', component_property='value'),
     Input('deckle-button', 'n_clicks'),
     Input('input-schedule-processed-json', 'children'),
     Input('setup-json', 'children'),
     Input('speed-json', 'children'),
     Input('doffs-per-jumbo', 'value'),
+    Input('max-layouts', 'value'),
     ]
 )
 def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss,# options,
-    button, input_schedule_json, setup_json, speed_json, doffs_in_jumbo, DEBUG=False):
+    button, input_schedule_json, setup_json, speed_json, doffs_in_jumbo,
+    max_doff_layouts, DEBUG=False):
     setup_df = pd.read_json(setup_json)
     speed_df = pd.read_json(speed_json)
     doffs_in_jumbo = int(doffs_in_jumbo)
@@ -481,7 +462,7 @@ def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss,# options,
         # sol, remain, loss = simple_genetic(s, B, binlim)
         sol, loss = find_optimum(s, B, widths, neckin,
             max_unique_products=widthlim,
-            loss_target=loss)
+            loss_target=loss, max_doff_layouts=max_doff_layouts)
         # if options == 'Late Orders':
             # master_schedule = optimize_late_orders(sol, widths, neckin, schedule_df, L)
             # master_schedule = optimize_schedule(sol, widths, neckin,
@@ -539,7 +520,6 @@ def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss,# options,
     # Input(component_id='max-bins', component_property='value'),
     Input(component_id='max-widths', component_property='value'),
     Input(component_id='loss-target', component_property='value'),
-    # Input(component_id='optimize-options', component_property='value'),
     Input('schedule-button', 'n_clicks'),
     Input('input-schedule-processed-json', 'children'),
     Input('setup-json', 'children'),
@@ -547,11 +527,12 @@ def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss,# options,
     Input('doffs-per-jumbo', 'value'),
     Input('layout-sol-json', 'children'),
     Input('deckle-date', 'date'),
+    Input(component_id='optimize-deckle-schedule-options', component_property='value'),
     ]
 )
 def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss, #options,
     button, input_schedule_json, setup_json, speed_json, doffs_in_jumbo,
-    sol_json, start, DEBUG=False):
+    sol_json, start, objective, DEBUG=False):
     if 'T0' in start:
         start_date = datetime.datetime.strptime(start.split('.')[0], '%Y-%m-%dT0%H:%M:%S')
     else:
@@ -600,8 +581,10 @@ def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss, #options,
         #     loss_target=loss)
         # if options == 'Late Orders':
             # master_schedule = optimize_late_orders(sol, widths, neckin, schedule_df, L)
+        print(objective)
         master_schedule = optimize_schedule(sol, widths, neckin,
-            schedule_df, L, setup_df, speed_df, doffs_in_jumbo, start_date)
+            schedule_df, L, setup_df, speed_df, doffs_in_jumbo, start_date,
+            objective)
         # for i in sol:
         #     i.sort()
         # sol.sort()

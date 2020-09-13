@@ -20,7 +20,7 @@ def find_optimum(s,
                  neckin,
                  iterations=100,
                  loss_target = 2,
-                 max_doff_layouts = 15,
+                 max_doff_layouts = 20,
                  max_unique_products = 6,
                  gene_count = 5,
                  doff_min = 1):
@@ -141,9 +141,11 @@ def find_optimum(s,
         if loss < best_loss:
             best_solution = sol_tot
             best_loss = loss
+            print(best_loss)
 
         if (loss < loss_target) and \
-            (summarize_results(sol_tot, widths, neckin, B).shape[0] < 20) and \
+            (summarize_results(sol_tot, widths, neckin, B).shape[0] <
+            (max_doff_layouts+1)) and \
             (all(pd.DataFrame(sol_tot).replace(0, np.nan, inplace=False)\
             .nunique(axis=1) <= max_unique_products)):
             break
@@ -567,7 +569,7 @@ def optimize_late_orders(sol, widths, neckin, df, L, DEBUG=False):
     return master_schedule
 
 def optimize_schedule(sol, widths, neckin, df_filtered, L, setup_df, speed_df,
-                      doffs_in_jumbo, start_date_time, DEBUG=False):
+                      doffs_in_jumbo, start_date_time, objective='knife changes', DEBUG=False):
 
     #####################################################
     # Step 1: Create Schedule According to Order Sequence
@@ -583,101 +585,175 @@ def optimize_schedule(sol, widths, neckin, df_filtered, L, setup_df, speed_df,
     layout_pattern = 0
     old_width = width = None
     completed_orders = []
+    df_filtered['Order Number'] = df_filtered.index + 1
 
-    #### logic for jumbo rolls should go in first loop
-    for row1 in df_filtered.index:
-        clear_output(wait=True)
-        ### select schedule data
-        current_scheduled = df_filtered.iloc[row1][['Total LM Order QTY', 'Width', 'Scheduled Ship Date']]
-        current_scheduled['Order Number'] = row1+1
-        ship_date = current_scheduled['Scheduled Ship Date']
-        doffs = math.ceil(current_scheduled['Total LM Order QTY'] / L) # QTY
-        width = str(current_scheduled['Width'])
-        if DEBUG:
-            print(width)
+    if objective == 'Late Orders':
+        #### logic for jumbo rolls should go in first loop
+        for row1 in df_filtered.index:
+            clear_output(wait=True)
+            ### select schedule data
+            current_scheduled = df_filtered.iloc[row1][['Total LM Order QTY', 'Width', 'Scheduled Ship Date']]
+            current_scheduled['Order Number'] = row1+1
+            ship_date = current_scheduled['Scheduled Ship Date']
+            doffs = math.ceil(current_scheduled['Total LM Order QTY'] / L) # QTY
+            width = str(current_scheduled['Width'])
+            if DEBUG:
+                print(width)
 
-        ### check if we've entered a new product
-        ### no setup changes here, we need to see if the layout has changed
-        if width == old_width:
-            layout_pattern -= 1
+            ### check if we've entered a new product
+            ### no setup changes here, we need to see if the layout has changed
+            if width == old_width:
+                layout_pattern -= 1
 
-        ### sort by the current scheduled width in master 2
-        master2 = master2.sort_values(str(width), ascending=False)
-        master2 = master2.reset_index(drop=True)
-        if DEBUG:
-            print(master2.head())
+            ### sort by the current scheduled width in master 2
+            master2 = master2.sort_values(str(width), ascending=False)
+            master2 = master2.reset_index(drop=True)
+            if DEBUG:
+                print(master2.head())
 
-        ### calc how many new doffs need to be made from inventory
-        target_doffs = extras.iloc[0][width]
-        if DEBUG:
-            print(pd.DataFrame(data=[[doffs, width, target_doffs]],
-                               columns=['required doffs', 'width', 'doffs made']))
-            print(doffs, width, target_doffs)
+            ### calc how many new doffs need to be made from inventory
+            target_doffs = extras.iloc[0][width]
+            if DEBUG:
+                print(pd.DataFrame(data=[[doffs, width, target_doffs]],
+                                   columns=['required doffs', 'width', 'doffs made']))
+                print(doffs, width, target_doffs)
 
-        ### only proceed if doffs are available in layout registrar
-        ### and not in inventory
-        if ((any(master2.loc[master2[width] > 0]['freq'] > 0))
-            and (target_doffs <= doffs)):
+            ### only proceed if doffs are available in layout registrar
+            ### and not in inventory
+            if ((any(master2.loc[master2[width] > 0]['freq'] > 0))
+                and (target_doffs <= doffs)):
 
-        ### go through the rows in the master2 registrar and check for
-        ### layout patterns that contain our current width
+            ### go through the rows in the master2 registrar and check for
+            ### layout patterns that contain our current width
 
-        ### Every row is a new layout unless the outer
-        ### loop has incremented, then only maybe is it
-        ### a new layout
-            for row in master2.index:
+            ### Every row is a new layout unless the outer
+            ### loop has incremented, then only maybe is it
+            ### a new layout
+                for row in master2.index:
 
-                # if none of the width are in the layout then break out
-                if np.isnan(master2.iloc[row][width]):
-                    break
-                layout_pattern += 1
-
-                # looping through available doffs in the layout
-                for count in range(master2.iloc[row]['freq'].astype(int)):
-
-                    # add to target doffs
-                    target_doffs += master2.iloc[row][width]
-
-                    # add to number of times we've made this layout
-                    master2.at[row, 'layout number'] = layout_pattern
-
-
-                    new_layout_and_scheduled_product = pd.concat([master2.iloc[row],
-                                                                  current_scheduled])
-                    schedule_with_order_info.append(new_layout_and_scheduled_product)
-                    schedule.append(master2.iloc[row])
-                    master2.at[row, 'freq'] = master2.at[row, 'freq'] - 1
-
-                    ### Tabluate the other widths that were made on the layout
-                    for master_index in master2.iloc[row].index[:-2]:
-                        if (math.isnan(master2.iloc[row][master_index]) == False):
-                            ### tabulate extras for other widths in the layout
-                            extras.iloc[0][master_index] = extras.iloc[0][master_index] +\
-                                master2.iloc[row][master_index]
-                            completed_orders.append
-                    if target_doffs >= doffs:
-
-                        ### add to registrar of completed orders.
-                        completed_orders.append(current_scheduled['Order Number'])
-
-                        ### now that we've finished this order, we want to see if we've completed any other orders as well
-
-
+                    # if none of the width are in the layout then break out
+                    if np.isnan(master2.iloc[row][width]):
                         break
-                ### for exiting nested for loop
-                else:
-                    continue
-                break
-        old_width = width
-        extra = target_doffs - doffs
-        extras.iloc[0][width] = extra
-        if DEBUG:
-            print(extras)
+                    layout_pattern += 1
 
-    sorted_schedule_with_order_info = pd.DataFrame(schedule_with_order_info)
-    sorted_schedule_with_order_info = sorted_schedule_with_order_info.reset_index(drop=True)
-    sorted_schedule = pd.DataFrame(schedule)
-    sorted_schedule = sorted_schedule.reset_index(drop=True)
+                    # looping through available doffs in the layout
+                    for count in range(master2.iloc[row]['freq'].astype(int)):
+
+                        # add to target doffs
+                        target_doffs += master2.iloc[row][width]
+
+                        # add to number of times we've made this layout
+                        master2.at[row, 'layout number'] = layout_pattern
+
+
+                        new_layout_and_scheduled_product = pd.concat([master2.iloc[row],
+                                                                      current_scheduled])
+                        schedule_with_order_info.append(new_layout_and_scheduled_product)
+                        schedule.append(master2.iloc[row])
+                        master2.at[row, 'freq'] = master2.at[row, 'freq'] - 1
+
+                        ### Tabluate the other widths that were made on the layout
+                        for master_index in master2.iloc[row].index[:-2]:
+                            if (math.isnan(master2.iloc[row][master_index]) == False):
+                                ### tabulate extras for other widths in the layout
+                                extras.iloc[0][master_index] = extras.iloc[0][master_index] +\
+                                    master2.iloc[row][master_index]
+                                completed_orders.append
+                        if target_doffs >= doffs:
+
+                            ### add to registrar of completed orders.
+                            completed_orders.append(current_scheduled['Order Number'])
+
+                            ### now that we've finished this order, we want to see if we've completed any other orders as well
+
+
+                            break
+                    ### for exiting nested for loop
+                    else:
+                        continue
+                    break
+            old_width = width
+            extra = target_doffs - doffs
+            extras.iloc[0][width] = extra
+            if DEBUG:
+                print(extras)
+
+        sorted_schedule_with_order_info = pd.DataFrame(schedule_with_order_info)
+        sorted_schedule_with_order_info = sorted_schedule_with_order_info.reset_index(drop=True)
+        sorted_schedule = pd.DataFrame(schedule)
+        sorted_schedule = sorted_schedule.reset_index(drop=True)
+    else:
+        # when we sort master, this will be similar to how we sort
+        # according to the desirable width in the optimize for late
+        # order algorithm. We will however do this for every width
+
+        for width in widths:
+            master2 = master2.sort_values(str(width), ascending=False)
+            master2 = master2.reset_index(drop=True)
+
+        # now we need to go through the schedule and match layouts
+        # with orders
+
+        # go through the layouts
+        for row in master2.index:
+
+            # go through doffs in the layout
+            for count in range(master2.iloc[row]['freq'].astype(int)):
+
+                # here we will grow our extras dataframe. We will use this
+                # to check against orders that are fullfilled.
+
+                ### Tabluate the other widths that were made on the layout
+                for master_index in master2.iloc[row].index[:-1]: # no layout number col, -2 in other algorithm
+
+                    if (math.isnan(master2.iloc[row][master_index]) == False):
+
+                        ### tabulate extras for other widths in the layout
+                        extras.iloc[0][master_index] = extras.iloc[0][master_index] +\
+                            master2.iloc[row][master_index]
+
+                # go through the orders
+                added_this_roll = []
+                if df_filtered.shape[0] > 0:
+                    for row1 in df_filtered.index:
+                        current_scheduled = df_filtered.iloc[row1][['Total LM Order QTY', 'Width',
+                                                                         'Scheduled Ship Date',
+                                                                         'Order Number']]
+                        order_number = current_scheduled['Order Number']
+                        ship_date = current_scheduled['Scheduled Ship Date']
+                        doffs = math.ceil(current_scheduled['Total LM Order QTY'] / L) # QTY
+                        width = str(current_scheduled['Width'])
+                        if extras[width][0] > doffs:
+
+                            completed_orders.append(order_number)
+                            extra = extras[width][0] - doffs
+                            extras.iloc[0][width] = extra
+                            new_layout_and_scheduled_product = pd.concat([master2.iloc[row],
+                                                                          current_scheduled])
+                            schedule_with_order_info.append(new_layout_and_scheduled_product)
+                            added_this_roll.append(order_number)
+                # if no order completed just append the layout
+                if len(added_this_roll) == 0:
+                    schedule_with_order_info.append(master2.iloc[row])
+                # if two orders completed append both
+                elif len(added_this_roll) == 2:
+                    schedule_with_order_info[-1][-1] =  "{} and {}".format(added_this_roll[0], added_this_roll[1])
+                    schedule_with_order_info.pop(-2)
+                elif len(added_this_roll) > 2:
+                    print('this is not tested')
+                    schedule_with_order_info[-1][-1] = str(added_this_roll).split('[')[-1].split(']')[0]
+                    # schedule_with_order_info.pop(-len(added_this_roll))
+                df_filtered = df_filtered[~df_filtered['Order Number'].isin(completed_orders)]
+                df_filtered = df_filtered.reset_index(drop=True)
+                master2.loc[0, 'freq'] -= 1
+
+
+        sorted_schedule_with_order_info = pd.DataFrame(schedule_with_order_info)
+        sorted_schedule_with_order_info = sorted_schedule_with_order_info.reset_index(drop=True)
+        sorted_schedule_with_order_info[['Total LM Order QTY',
+       'Width', 'Scheduled Ship Date', 'Order Number']] = \
+        sorted_schedule_with_order_info[['Total LM Order QTY',
+       'Width', 'Scheduled Ship Date', 'Order Number']].fillna(method='bfill')
 
     #####################################################
     # Step 2: Add Times Based on Rates/Changeovers
@@ -747,7 +823,7 @@ def optimize_schedule(sol, widths, neckin, df_filtered, L, setup_df, speed_df,
 
         ### change main df
         sorted_schedule_with_order_info['Completion Date'][row] = completion_date_time
-        sorted_schedule_with_order_info['layout number'][row] = layout_number
+        # sorted_schedule_with_order_info['layout number'][row] = layout_number
 
         ### with changeover rows
         current_changeover = pd.DataFrame(sorted_schedule_with_order_info.columns)
@@ -816,6 +892,6 @@ def optimize_schedule(sol, widths, neckin, df_filtered, L, setup_df, speed_df,
         current_combined = current_changeover.append(current, sort=False, ignore_index=True)
         current_combined
 
-        master_schedule = pd.concat([master_schedule, current_combined])
+        master_schedule = pd.concat([master_schedule, current_combined], sort=False)
         master_schedule = master_schedule.reset_index(drop=True)
     return master_schedule
