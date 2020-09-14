@@ -120,6 +120,9 @@ for index, width in enumerate(widths):
 
     )
 style_data_conditional = [item for sublist in stuff for item in sublist]
+deckle_time = master_schedule.iloc[-1]['Completion Date'] - \
+                master_schedule.iloc[0]['Completion Date']
+deckle_time = ("{}".format(deckle_time)).split(".")[0]
 ################################################################################
 ################ pre-calculations to populate tables on load ###################
 ################################################################################
@@ -241,15 +244,7 @@ app.layout = html.Div(children=[
     html.Button('Optimize Deckle',
                 id='deckle-button',),
     html.Br(),
-    # html.A('Save Deckle',
-    #             id='save-button',
-    #             download='deckle_pattern.csv',
-    #             href='',
-    #             target='_blank'),
-
     html.Br(),
-
-    html.Div(id='my-output'),
     HIDDEN,
     html.Div(id='results',
         children=
@@ -278,7 +273,6 @@ app.layout = html.Div(children=[
         date=str(start_date_time),
     ),]),
     html.Br(),
-
     html.Div(["Optimize Schedule For: ",
     dcc.Dropdown(id='optimize-deckle-schedule-options',
                  multi=False,
@@ -292,7 +286,6 @@ app.layout = html.Div(children=[
                         'margin': '10px',
                         }
                         ),],
-                        # className='four columns',
                         id='optimize-deckle-schedule-options-div',
                                                     style={
                                                     'margin-right': '40px',
@@ -301,11 +294,10 @@ app.layout = html.Div(children=[
     html.Button('Create Schedule',
                 id='schedule-button',),
     html.Br(),
-    # html.A('Save Schedule',
-    #             id='save-schedule',
-    #             download='deckle_schedule.csv',
-    #             href='',
-    #             target='_blank'),
+    html.Br(),
+    html.Div(id='schedule-results',
+        children=
+        "Total Deckle Time: {}".format(deckle_time)),
     html.Br(),
     html.Div(
     children=dash_table.DataTable(id='deckle-schedule-table',
@@ -510,7 +502,8 @@ def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss,# options,
 @app.callback(
     [Output('deckle-schedule-json', 'children'),
     Output('deckle-schedule-table', 'data'),
-    Output('deckle-schedule-table', 'columns')],
+    Output('deckle-schedule-table', 'columns'),
+    Output('schedule-results', 'children')],
     [Input(component_id='doff-width', component_property='value'),
     Input(component_id='doff-length', component_property='value'),
     Input(component_id='product-width', component_property='value'),
@@ -585,6 +578,9 @@ def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss, #options,
         master_schedule = optimize_schedule(sol, widths, neckin,
             schedule_df, L, setup_df, speed_df, doffs_in_jumbo, start_date,
             objective)
+        deckle_time = master_schedule.iloc[-1]['Completion Date']\
+                        - master_schedule.iloc[0]['Completion Date']
+        deckle_time = ("{}".format(deckle_time)).split(".")[0]
         # for i in sol:
         #     i.sort()
         # sol.sort()
@@ -599,8 +595,9 @@ def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss, #options,
         pd.options.display.max_columns = 999
         print(master_schedule.head())
         return [master_schedule.to_json(date_unit='ns'),
-        master_schedule.to_dict('rows'),\
-        [{"name": str(i), "id": str(i)} for i in master_schedule.columns]]
+        master_schedule.to_dict('rows'),
+        [{"name": str(i), "id": str(i)} for i in master_schedule.columns],
+        "Total Deckle Time: {}".format(deckle_time)]
 
 if __name__ == '__main__':
     app.run_server(debug=True)
