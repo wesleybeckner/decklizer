@@ -569,7 +569,7 @@ def optimize_late_orders(sol, widths, neckin, df, L, DEBUG=False):
     return master_schedule
 
 def optimize_schedule(sol, widths, neckin, df_filtered, L, setup_df, speed_df,
-                      doffs_in_jumbo, start_date_time, objective='knife changes', DEBUG=False):
+                      doffs_in_jumbo, start_date_time, objective='Time (Knife Changes)', DEBUG=False):
 
     #####################################################
     # Step 1: Create Schedule According to Order Sequence
@@ -682,7 +682,7 @@ def optimize_schedule(sol, widths, neckin, df_filtered, L, setup_df, speed_df,
         sorted_schedule_with_order_info = sorted_schedule_with_order_info.reset_index(drop=True)
         sorted_schedule = pd.DataFrame(schedule)
         sorted_schedule = sorted_schedule.reset_index(drop=True)
-    else:
+    elif objective == "Time (Knife Changes)":
         # when we sort master, this will be similar to how we sort
         # according to the desirable width in the optimize for late
         # order algorithm. We will however do this for every width
@@ -754,6 +754,9 @@ def optimize_schedule(sol, widths, neckin, df_filtered, L, setup_df, speed_df,
        'Width', 'Scheduled Ship Date', 'Order Number']] = \
         sorted_schedule_with_order_info[['Total LM Order QTY',
        'Width', 'Scheduled Ship Date', 'Order Number']].fillna(method='bfill')
+    else:
+        print("no valid objective provided")
+        return 0
 
     #####################################################
     # Step 2: Add Times Based on Rates/Changeovers

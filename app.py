@@ -102,7 +102,7 @@ sol_json = df.to_json()
 sol_df = layout_summary(sol, widths, neckin, B)
 sol_df['Doffs'] = sol_df['Doffs']*doffs_in_jumbo
 master_schedule = optimize_schedule(sol, widths, neckin,
-    schedule_df, L, setup_df, speed_df, doffs_in_jumbo, start_date_time)
+    schedule_df, L, setup_df, speed_df, doffs_in_jumbo, start_date_time, "Time (Knife Changes)")
 stuff = []
 for index, width in enumerate(widths):
     stuff.append(
@@ -455,10 +455,6 @@ def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss,# options,
         sol, loss = find_optimum(s, B, widths, neckin,
             max_unique_products=widthlim,
             loss_target=loss, max_doff_layouts=max_doff_layouts)
-        # if options == 'Late Orders':
-            # master_schedule = optimize_late_orders(sol, widths, neckin, schedule_df, L)
-            # master_schedule = optimize_schedule(sol, widths, neckin,
-            #     schedule_df, L, setup_df, speed_df, doffs_in_jumbo)
         for i in sol:
             i.sort()
         sol.sort()
@@ -528,6 +524,10 @@ def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss, #options,
     sol_json, start, objective, DEBUG=False):
     if 'T0' in start:
         start_date = datetime.datetime.strptime(start.split('.')[0], '%Y-%m-%dT0%H:%M:%S')
+    elif 'T1' in start:
+        start_date = datetime.datetime.strptime(start.split('.')[0], '%Y-%m-%dT1%H:%M:%S')
+    elif len(start.split(' ')) == 1:
+        start_date = datetime.datetime.strptime(start.split('.')[0], '%Y-%m-%d')
     else:
         start_date = datetime.datetime.strptime(start.split('.')[0], '%Y-%m-%d %H:%M:%S')
 
