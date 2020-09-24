@@ -56,9 +56,13 @@ df_input_schedule.insert(1, 'Technology', df_input_schedule['Description'].apply
 df_input_schedule.insert(2, 'Color', df_input_schedule['Description'].apply(lambda x: x.split(';')[1] if type(x) == str else None))
 df_input_schedule.insert(3, 'Width', df_input_schedule['Description'].apply(lambda x: parse_description(x, 'width')))
 df_input_schedule = df_input_schedule[[col for col in df_input_schedule.columns if 'Unnamed' not in str(col)]]
+df_input_schedule['Total LM Order QTY'] = df_input_schedule['Total LM Order QTY'].round(1)
 temp = df_input_schedule[['Customer Name', 'Technology', 'Color', 'Width', 'CYCLE / BUCKET',
                           'Description', 'Total LM Order QTY',
                           'Scheduled Ship Date', 'Date order is complete']]
+temp['Scheduled Ship Date'] = pd.to_datetime(temp['Scheduled Ship Date'], errors='coerce')
+temp["Scheduled Ship Date"] = temp["Scheduled Ship Date"].dt.strftime("%Y-%m-%d")
+temp["Date order is complete"] = temp["Date order is complete"].dt.round('T')
 
 customer = 'P & G'
 technology = 'SAM'
@@ -69,6 +73,7 @@ schedule_df = df_input_schedule.loc[df_input_schedule['Customer Name'] == custom
 schedule_df = schedule_df.loc[schedule_df['Description'].str.contains(technology)]
 schedule_df = schedule_df.loc[schedule_df['Description'].str.contains(color)] #CYAN, TEAL
 schedule_df = schedule_df.loc[schedule_df['CYCLE / BUCKET'] == cycle]
+schedule_df = schedule_df.loc[schedule_df['Total LM Order QTY'] > 0]
 schedule_df.insert(0, 'Block', 1)
 schedule_df = schedule_df.reset_index(drop=True)
 schedule_df['Order Number'] = schedule_df.index + 1
@@ -103,6 +108,11 @@ sol_df = layout_summary(sol, widths, neckin, B)
 sol_df['Doffs'] = sol_df['Doffs']*doffs_in_jumbo
 master_schedule = optimize_schedule(sol, widths, neckin,
     schedule_df, L, setup_df, speed_df, doffs_in_jumbo, start_date_time, "Time (Knife Changes)")
+master_schedule['Scheduled Ship Date'] = pd.to_datetime(master_schedule['Scheduled Ship Date'], errors='coerce')
+master_schedule["Scheduled Ship Date"] = master_schedule["Scheduled Ship Date"].dt.strftime("%Y-%m-%d")
+
+master_schedule["Completion Date"] = master_schedule["Completion Date"].dt.round('T')
+
 stuff = []
 for index, width in enumerate(widths):
     stuff.append(
@@ -343,10 +353,12 @@ def proccess_upload(contents, filename, date):
         df_input_schedule.insert(2, 'Color', df_input_schedule['Description'].apply(lambda x: x.split(';')[1] if type(x) == str else None))
         df_input_schedule.insert(3, 'Width', df_input_schedule['Description'].apply(lambda x: parse_description(x, 'width')))
         df_input_schedule = df_input_schedule[[col for col in df_input_schedule.columns if 'Unnamed' not in str(col)]]
+        df_input_schedule['Total LM Order QTY'] = df_input_schedule['Total LM Order QTY'].round(1)
         temp = df_input_schedule[['Customer Name', 'Technology', 'Color', 'Width', 'CYCLE / BUCKET',
                                   'Description', 'Total LM Order QTY',
                                   'Scheduled Ship Date', 'Date order is complete']]
-        temp['Scheduled Ship Date'] = pd.to_datetime(temp['Scheduled Ship Date'], errors='ignore', unit='ms')
+        temp['Scheduled Ship Date'] = pd.to_datetime(temp['Scheduled Ship Date'], errors='coerce', unit='ms')
+        temp["Scheduled Ship Date"] = temp["Scheduled Ship Date"].dt.strftime("%Y-%m-%d")
         return [temp.to_json(),
                 [{"name": str(i), "id": str(i)} for i in temp.columns],
                 temp.to_dict('rows')]
@@ -369,6 +381,7 @@ def filter_schedule(rows, data, button):
                 new_df = pd.DataFrame(data)
             elif (len(rows) > 0):
                 new_df = pd.DataFrame(data).iloc[rows]
+            new_df = new_df.loc[new_df['Total LM Order QTY'] > 0]
             widths = list(new_df.groupby('Width')['Total LM Order QTY'].sum()
                     .index.values.astype(int))
             lm = [round(i) for i in list(new_df.groupby('Width')['Total LM Order QTY'].sum().values)]
@@ -425,7 +438,7 @@ def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss,# options,
     speed_df = pd.read_json(speed_json)
     doffs_in_jumbo = int(doffs_in_jumbo)
     L = L * doffs_in_jumbo
-    schedule_df = pd.read_json(input_schedule_json)
+
 
 
     ctx = dash.callback_context
@@ -521,7 +534,7 @@ def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss,# options,
 )
 def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss, #options,
     button, input_schedule_json, setup_json, speed_json, doffs_in_jumbo,
-    sol_json, start, objective, DEBUG=False):
+    sol_json, start, objective, DEBUG=True):
     if 'T0' in start:
         start_date = datetime.datetime.strptime(start.split('.')[0], '%Y-%m-%dT0%H:%M:%S')
     elif 'T1' in start:
@@ -544,6 +557,7 @@ def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss, #options,
     #                         convert_dates=dates)
     schedule_df = pd.read_json(input_schedule_json,
                             convert_dates=dates)
+    schedule_df = schedule_df.loc[schedule_df['Total LM Order QTY'] > 0]
 
     ctx = dash.callback_context
     widthlim = int(widthlim)
@@ -581,6 +595,10 @@ def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss, #options,
         deckle_time = master_schedule.iloc[-1]['Completion Date']\
                         - master_schedule.iloc[0]['Completion Date']
         deckle_time = ("{}".format(deckle_time)).split(".")[0]
+
+        master_schedule['Scheduled Ship Date'] = pd.to_datetime(master_schedule['Scheduled Ship Date'], errors='coerce')
+        master_schedule["Scheduled Ship Date"] = master_schedule["Scheduled Ship Date"].dt.strftime("%Y-%m-%d")
+        master_schedule["Completion Date"] = master_schedule["Completion Date"].dt.round('T')
         # for i in sol:
         #     i.sort()
         # sol.sort()

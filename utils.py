@@ -723,7 +723,7 @@ def optimize_schedule(sol, widths, neckin, df_filtered, L, setup_df, speed_df,
                         ship_date = current_scheduled['Scheduled Ship Date']
                         doffs = math.ceil(current_scheduled['Total LM Order QTY'] / L) # QTY
                         width = str(current_scheduled['Width'])
-                        if extras[width][0] > doffs:
+                        if extras[width][0] >= doffs:
 
                             completed_orders.append(order_number)
                             extra = extras[width][0] - doffs
