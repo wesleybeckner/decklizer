@@ -16,7 +16,7 @@ import dash_table
 from dash.dependencies import Input, Output, State
 import urllib
 from utils import *
-# from genetic import *
+from engine import *
 
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 
@@ -106,7 +106,7 @@ df = pd.DataFrame(sol)
 sol_json = df.to_json()
 sol_df = layout_summary(sol, widths, neckin, B)
 sol_df['Doffs'] = sol_df['Doffs']*doffs_in_jumbo
-master_schedule = optimize_schedule(sol, widths, neckin,
+master_schedule, extras = optimize_schedule(sol, widths, neckin,
     schedule_df, L, setup_df, speed_df, doffs_in_jumbo, start_date_time, "Time (Knife Changes)")
 master_schedule['Scheduled Ship Date'] = pd.to_datetime(master_schedule['Scheduled Ship Date'], errors='coerce')
 master_schedule["Scheduled Ship Date"] = master_schedule["Scheduled Ship Date"].dt.strftime("%Y-%m-%d")
@@ -589,9 +589,18 @@ def update_output_div(B, L, wstr, lmstr, neckstr, widthlim, loss, #options,
         # if options == 'Late Orders':
             # master_schedule = optimize_late_orders(sol, widths, neckin, schedule_df, L)
         print(objective)
-        master_schedule = optimize_schedule(sol, widths, neckin,
+        master_schedule, extras = optimize_schedule(sol, widths, neckin,
             schedule_df, L, setup_df, speed_df, doffs_in_jumbo, start_date,
             objective)
+
+        ### should not create inventory at this point,
+        ### but we don't know how jumbos are divvied between orders
+        out = "Inventory created: "
+        for col in extras:
+            if extras[col][0] != 0:
+                out += "{} x {:.0f}; ".format(col, extras[col][0])
+        out = out[:-2]
+
         deckle_time = master_schedule.iloc[-1]['Completion Date']\
                         - master_schedule.iloc[0]['Completion Date']
         deckle_time = ("{}".format(deckle_time)).split(".")[0]
