@@ -43,12 +43,38 @@ def find_optimum(s,
                  B,
                  widths,
                  neckin,
-                 iterations=100,
                  loss_target = 2,
                  max_doff_layouts = 20,
                  max_unique_products = 6,
-                 gene_count = 5,
-                 doff_min = 1):
+                 gene_count = 5):
+    """
+    Parameters
+    ----------
+    s: list
+        list of widths for each order
+    B: int
+        usable doff width
+    widths: list
+        list of unique widths
+    neckin: list
+        list of neckin for each width
+    loss_target: float or int
+        minimization goal for material loss
+    max_doff_layouts: int
+        maximum allowable unique layouts
+    max_unique_products: int
+        maximum allowable unique products per layout
+    gene_count: int
+        hyperparameter evolutionary algorithm. Number of layouts to pull from
+        initial knapsack packing
+
+    Returns
+    -------
+    sol: list
+        list of optimized layouts
+    loss: float
+        total fractional material loss for all layouts
+    """
     losses = []
     solutions = []
     best_loss = 100
@@ -116,28 +142,28 @@ def find_optimum(s,
                         break
             else:
                 check_pass = True
-                for mult in range(doff_min):
+                # for mult in range(1):
 
-                    for item in new_gene:
-                        if item in order_remaining:
-                            order_remaining.remove(item)
-                        elif item == 0:
-                            pass
-                        else: # new gene over produces item
+                for item in new_gene:
+                    if item in order_remaining:
+                        order_remaining.remove(item)
+                    elif item == 0:
+                        pass
+                    else: # new gene over produces item
 
-                            check_pass = False
-                            break
-                    else:
-
-                        continue  # only executed if the inner loop did NOT break
-                    if check_pass == False:  # only executed if the inner loop DID break
-                        order_remaining = backup_order_remaining
-                        genes.remove(new_gene)
-
+                        check_pass = False
                         break
+                else:
+
+                    continue  # only executed if the inner loop did NOT break
+                if check_pass == False:  # only executed if the inner loop DID break
+                    order_remaining = backup_order_remaining
+                    genes.remove(new_gene)
+
+                    break
                 if check_pass == True:
-                    for mult in range(doff_min):
-                        sol2.append(new_gene)
+                    # for mult in range(doff_min):
+                    sol2.append(new_gene)
 
         chrome_time = time.time() - gene_time
         #     if step > iterations:
@@ -145,7 +171,7 @@ def find_optimum(s,
         remain2 = [B] #initialize list of remaining bin spaces
         sol3 = [[]]
         binlim = np.inf
-        doff_min = 2
+        # doff_min = 2
         for item in sorted(order_remaining, reverse=True): # iter through products
             for j,free in enumerate(remain2): #
                 if (free >= item) and (len(sol3[j]) < binlim): # if theres room,
@@ -174,7 +200,8 @@ def find_optimum(s,
             (all(pd.DataFrame(sol_tot).replace(0, np.nan, inplace=False)\
             .nunique(axis=1) <= max_unique_products)):
             break
-    return sol_tot, loss
+    sol = sol_tot
+    return sol, loss
 
 def optimize_schedule(sol, widths, neckin, df_filtered, L, setup_df, speed_df,
                       doffs_in_jumbo, start_date_time, objective='Time (Knife Changes)', DEBUG=False):

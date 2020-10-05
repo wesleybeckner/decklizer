@@ -35,13 +35,6 @@ server = app.server
 tableau_colors = ['#4E79A7', '#F28E2B', '#E15759', '#76B7B2', '#59A14F', '#EDC948', '#B07AA1',
                   '#FF9DA7', '#9C755F', '#BAB0AC']
 
-#dummy save
-# user defined variables
-# B = 3850-200 # useful Doff width in MM (RW-Trim)
-# L = 22500 # put up, Doff length
-# w = [531+8,667+11,574+10] # roll widths with Neck In
-# lm = [1035000, 945000, 958188] # material needed in LM
-
 setup_df = pd.read_excel('data/200725_WAVA Deckle Optimization Parameters Rev1.xlsx',
                          sheet_name='Deckle Parameters')
 speed_df = pd.read_excel('data/200725_WAVA Deckle Optimization Parameters Rev1.xlsx',
@@ -58,7 +51,7 @@ df_input_schedule.insert(3, 'Width', df_input_schedule['Description'].apply(lamb
 df_input_schedule = df_input_schedule[[col for col in df_input_schedule.columns if 'Unnamed' not in str(col)]]
 df_input_schedule['Total LM Order QTY'] = df_input_schedule['Total LM Order QTY'].round(1)
 temp = df_input_schedule[['Customer Name', 'Technology', 'Color', 'Width', 'CYCLE / BUCKET',
-                          'Description', 'Total LM Order QTY',
+                          'Description', 'Total LM Order QTY', 'LM putup',
                           'Scheduled Ship Date', 'Date order is complete']]
 temp['Scheduled Ship Date'] = pd.to_datetime(temp['Scheduled Ship Date'], errors='coerce')
 temp["Scheduled Ship Date"] = temp["Scheduled Ship Date"].dt.strftime("%Y-%m-%d")
@@ -369,7 +362,8 @@ def proccess_upload(contents, filename, date):
     Output(component_id='product-width', component_property='value'),
     Output(component_id='product-length', component_property='value'),
     Output(component_id='neck-in', component_property='value'),
-    Output(component_id='deckle-date', component_property='date'),],
+    Output(component_id='deckle-date', component_property='date'),
+    Output(component_id='doff-length', component_property='value')],
   [Input('input-schedule-table', 'derived_virtual_selected_rows'),
   Input('input-schedule-table', 'derived_virtual_data'),
   Input('process-bucket-button', 'n_clicks')])
@@ -386,6 +380,7 @@ def filter_schedule(rows, data, button):
                     .index.values.astype(int))
             lm = [round(i) for i in list(new_df.groupby('Width')['Total LM Order QTY'].sum().values)]
             neckins = []
+            doff_length = new_df['LM putup'].values[0]
             for width in widths:
                 if width < 170:
                     neckin = 4
@@ -400,13 +395,15 @@ def filter_schedule(rows, data, button):
                         str(widths).split('[')[1].split(']')[0],
                         str(lm).split('[')[1].split(']')[0],
                         str(neckins).split('[')[1].split(']')[0],
-                        str(start_date_time)]
+                        str(start_date_time),
+                        doff_length]
             elif (len(rows) > 0):
                 return [pd.DataFrame(data).iloc[rows].to_json(),
                         str(widths).split('[')[1].split(']')[0],
                         str(lm).split('[')[1].split(']')[0],
                         str(neckins).split('[')[1].split(']')[0],
-                        str(start_date_time)]
+                        str(start_date_time),
+                        doff_length]
 
 @app.callback(
     [Output(component_id='results', component_property='children'),
