@@ -4,21 +4,26 @@ import math
 import urllib
 import copy
 import base64
-import dash_html_components as html
 import io
 import re
 import datetime
 import time
 from random import shuffle, choice
-from IPython.display import display, clear_output
 import urllib
+from os.path import dirname, join
+# from engine import *
 
-def load_schedule(customer = 'AHP',
+def load_schedule(df=None,
+                  customer = 'AHP',
                   technology = 'SM',
                   color = 'WHITE',
                   cycle = 'CYCLE 1'):
-    df = pd.read_excel('../data/200721_ New Way SCH W3-W6 W14 07.20.20.xlsx',
-                       sheet_name='Schedule')
+    if df is None:
+        module_path = dirname(__file__)
+        with open(join(module_path, 'data', '200721_ New Way SCH W3-W6 W14 07.20.20.xlsx'), 'rb') as \
+                excel_file:
+            df = pd.read_excel(excel_file,
+                               sheet_name='Schedule')
 
 
     df_filtered = df.loc[df['Customer Name'] == customer]
@@ -72,9 +77,6 @@ def parse_contents(contents, filename, date):
             df = pd.read_excel(io.BytesIO(decoded))
     except Exception as e:
         print(e)
-        return html.Div([
-            'There was an error processing this file.'
-        ])
     return df.to_json()
 
 def parse_description(text, grab='tech'):

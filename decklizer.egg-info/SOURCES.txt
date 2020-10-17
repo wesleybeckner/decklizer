@@ -1,0 +1,16 @@
+setup.py
+decklizer/__init__.py
+decklizer/app.py
+decklizer/engine.py
+decklizer/utils.py
+decklizer/version.py
+decklizer.egg-info/PKG-INFO
+decklizer.egg-info/SOURCES.txt
+decklizer.egg-info/dependency_links.txt
+decklizer.egg-info/requires.txt
+decklizer.egg-info/top_level.txt
+decklizer/data/200721_ New Way SCH W3-W6 W14 07.20.20.xlsx
+decklizer/data/200725_WAVA Deckle Optimization Parameters Rev1.xlsx
+decklizer/data/New Way SCH W3-W6, W14 08.24.20.xlsx
+decklizer/tests/__init__.py
+decklizer/tests/test.py
