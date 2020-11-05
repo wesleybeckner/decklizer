@@ -9,9 +9,43 @@ from collections import Counter
 import itertools
 from scipy.optimize import linprog
 
-def seed_patterns(w, q, B, n, max_combinations=3, verbiose=True):
-    layout = make_best_pattern(q, w, n, verbiose=verbiose)
-    combos = list(itertools.combinations(w,r=max_combinations))
+def seed_patterns(w, q, B, n, max_combinations=3, goal=3, verbiose=True):
+    '''
+    creates a number of optimal patterns for deckling
+
+    Parameters
+    ----------
+    w: list
+        list of widths (int)
+    q: list
+        list of rolls for each width (int)
+    B: int
+        usuable width per mother roll
+    n: list
+        neck in for each width (int)
+    max_combinations: int, default 3
+        maximum number of unique products (widths) to have on a mother roll
+    goal: int, default 3
+        the desired number of recovered patterns from the knapsack problem
+        for every unique grouping of unique widths at max_combinations
+    verbiose: bool, default True
+        turns on/off print statements during execution
+
+    Returns
+    -------
+    patterns: list of lists
+        list of pattern, loss pairs. Pattern is a dictionary containing a width,
+        count pair that describes the pattern on the mother roll. Loss is the
+        percent material loss for the pattern.
+    layout: list
+        list of counts for every width on the mother roll. Layout is the best
+        possible pattern in terms of minimizing mother rolls to create the order
+        with a single pattern.
+    '''
+    layout = make_best_pattern(q, w, n, B, verbiose=verbiose)
+    combos = []
+    for i in range(1,max_combinations+1)[::-1]:
+        combos += list(itertools.combinations(w,r=i))
     if verbiose:
         print('')
         print("{} possible max {} combinations".format(len(combos),max_combinations))
@@ -25,17 +59,33 @@ def seed_patterns(w, q, B, n, max_combinations=3, verbiose=True):
         t = initt(B,len(s))
         knapsack(s, s, B, len(s), t)
         t = np.array(t)
-        patterns += store_patterns(t, s, B, goal=3)
+        patterns += store_patterns(t, s, B, goal=goal)
+        for j in range(3):
+            for i in patterns:
+                for key in list(i[0].keys()):
+                    loss = (B - np.sum(np.array(list(i[0].keys())) *
+                        np.array(list(i[0].values())))) - key
+                    if loss > 0:
+                        i[0][key] += 1
+                        i[1] = loss
     uni_list = []
     for i in patterns:
         if i not in uni_list:
             uni_list.append(i)
     patterns = uni_list
     patterns = list(np.array(patterns)[np.array(patterns)[:,1]>=0])
+
+    # the naive patterns should be kept due to their usefullness
+    # in order fulfilment regardless of loss
+    naive = init_layouts(B, w)
+    for i in naive:
+        i = [-j for j in i]
+        patterns.append([dict(zip(w,i)),0])
+
     if verbiose:
         print("{} unique patterns found".format(len(patterns)))
     return patterns, layout
-    
+
 def knapsack(wt, val, W, n, t):
 
     # base conditions
@@ -64,8 +114,10 @@ def store_patterns(t, s, B, goal=5):
             N, W = pair
             sack = reconstruct(N, W, t, s)
             pattern = Counter(np.array(s)[list(sack)])
-            loss = round((B - np.array(s)[list(sack)].sum())/B*100,2)
-            patterns.append([pattern, loss])
+            loss = B - np.sum(np.array(list(pattern.keys())) *
+                            np.array(list(pattern.values())))
+            if loss > 0:
+                patterns.append([pattern, loss])
             if len(patterns) >= goal:
                 break
             found += 1
@@ -122,11 +174,17 @@ def make_best_pattern(q, w, n, usable_width=4160, verbiose=True):
     """
     layout = [max(1, math.floor(i/sum(q)*usable_width/j)) for i,j in zip(q,w)]
 
+
     # give priority to widths that had to round down the most
     # when filling up the rest of the pattern
     remainder = [math.remainder(i/sum(q)*usable_width/j, 1) if (math.remainder(i/sum(q)*usable_width/j, 1)
                                                         < 0) else -1 for i,j in zip(q,w) ]
     order = np.argsort(remainder)
+    # sometimes the floor still puts us over
+    for i in range(3):
+        if usable_width - sum([i*j for i,j in zip(layout,w)]) < 0:
+            layout[np.argmax(layout)] -= 1
+
     while (usable_width - sum([i*j for i,j in zip(layout,w)])) > min(w):
         for i in order[::-1]:
             layout[i] += 1
@@ -205,7 +263,54 @@ def output_results(result, lhs_ineq, B, w, n, q, L):
     return loss, inventory, summary
 
 # choose max unique widths per doff
-def find_optimum(patterns, layout, w, q, B, n, L, max_combinations=3, max_patterns = 3, prioritize = 'time'):
+def find_optimum(patterns, layout, w, q, B, n, L, max_combinations=3,
+                 max_patterns = 3, prioritize = 'time'):
+    '''
+    Finds the best possible slitter schedule by linear optimization of a set of
+    patterns.
+
+    Parameters
+    ----------
+    patterns: list of lists
+        list of pattern, loss pairs. Pattern is a dictionary containing a width,
+        count pair that describes the pattern on the mother roll. Loss is the
+        percent material loss for the pattern.
+    layout: list
+        list of counts for every width on the mother roll. Layout is the best
+        possible pattern in terms of minimizing mother rolls to create the order
+        with a single pattern.
+    w: list
+        list of widths (int)
+    q: list
+        list of rolls for each width (int)
+    B: int
+        usuable width (mm) of mother roll
+    n: list
+        neck in for each width (int)
+    L: int
+        length (m) of mother roll
+    max_combinations: int, default 3
+        maximum number of unique products (widths) to have on a mother roll
+    max_patterns: int, default 3
+        maximum number of patterns for deckle schedule
+    prioritize: str, default 'time'
+        only relevant when max_patterns < 4. When max_patterns < 4 either the
+        lowest material waste linear opimization of patterns is returned
+        ('material loss') or the fewest mother rolls used is returned ('time')
+
+    Returns
+    -------
+    loss: float
+        percent loss for the deckle schedule
+    inventory: dictionary
+        width, count pairs that describe the inventory created above the order
+        critieria
+    summary: dataframe
+        dataframe of loss, jumbos, layout that describe the percent material
+        loss, total number of jumbos (or doffs), and the dictionary of width,
+        count pairs that describe the pattern for every pattern in the deckle
+        schedule
+    '''
     if prioritize == 'material loss':
         inv_loss = 0
     elif prioritize == 'time':
@@ -298,6 +403,7 @@ def find_optimum(patterns, layout, w, q, B, n, L, max_combinations=3, max_patter
         lhs_ineq.append(inset)
     # naive = init_layouts(B, w)
     # lhs_ineq = lhs_ineq + naive
+
     if len(w) <= max_combinations:
         lhs_ineq.append([-i for i in layout])
     lhs_ineq = np.array(lhs_ineq).T.tolist()
@@ -308,7 +414,10 @@ def find_optimum(patterns, layout, w, q, B, n, L, max_combinations=3, max_patter
             A_ub=lhs_ineq,
             b_ub=rhs_ineq,
             method="revised simplex")
-
+    if result['success'] == False:
+        print('Error')
+        print(result['message'])
+        return 0
     return output_results(result, lhs_ineq, B, w, n, q, L)
 
 def BinPackingExample(w, q):
