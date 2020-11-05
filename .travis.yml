@@ -19,5 +19,5 @@ install:
 # - sleep 3 # give xvfb some time to start
 
 script:
-- flake8 --ignore N802,N806,W503,F401 `find . -name \*.py | grep -v setup.py | grep -v version.py | grep -v /.venv/ | grep -v __init__.py | grep -v /docs/ | grep -v /sphinx/`
+# - flake8 --ignore N802,N806,W503,F401 `find . -name \*.py | grep -v setup.py | grep -v version.py | grep -v /.venv/ | grep -v __init__.py | grep -v /docs/ | grep -v /sphinx/`
 - python -m unittest discover
