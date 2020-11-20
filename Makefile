@@ -9,4 +9,4 @@ flake8:
 	@echo "flake8 passed"
 
 test:
-	python -m unittest discover
+	python -m pytest
