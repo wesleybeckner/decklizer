@@ -197,16 +197,20 @@ def make_best_pattern(q, w, n, usable_width=4160, verbiose=True):
         print("layout pattern: {}".format(dict(zip([i-j for i,j in zip(w,n)],layout))))
         print("pattern loss: {:0.2f} %".format(layout_loss/usable_width*100))
 
-    # multiply to get the minimum doffs required
-    # layout * doffs > q
-    doffs = max([math.ceil(i/j) for i,j in zip(q, layout)])
-    if verbiose:
-        print("minimum doffs to fill order: {}".format(doffs))
+    # sometimes all orders can't be fullfilled in a single layout
+    if any([i == 0 for i in layout]):
+        return layout
+    else:
+        # multiply to get the minimum doffs required
+        # layout * doffs > q
+        doffs = max([math.ceil(i/j) for i,j in zip(q, layout)])
+        if verbiose:
+            print("minimum doffs to fill order: {}".format(doffs))
 
-    # what inventory is created
-    inventory = dict(zip([i-j for i,j in zip(w,n)],[i*doffs-j for i,j in zip(layout,q)]))
-    if verbiose:
-        print("inventory created: {}".format(inventory))
+        # what inventory is created
+        inventory = dict(zip([i-j for i,j in zip(w,n)],[i*doffs-j for i,j in zip(layout,q)]))
+        if verbiose:
+            print("inventory created: {}".format(inventory))
 
     return layout
 
