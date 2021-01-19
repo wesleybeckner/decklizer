@@ -223,8 +223,6 @@ def init_layouts(B, w):
         t.append(pat)
     return t
 
-
-
 def output_results(result, lhs_ineq, B, w, n, q, L):
     sheet = np.sum([(i*j) for i,j in zip(w, np.array(lhs_ineq))],axis=0)#*np.ceil(result['x'])
     inventory = dict(zip([i-j for i,j in zip(w,n)],np.sum(np.array(lhs_ineq)*-1*np.ceil(result['x']),axis=1)-np.array(q)))
@@ -268,7 +266,7 @@ def output_results(result, lhs_ineq, B, w, n, q, L):
 
 # choose max unique widths per doff
 def find_optimum(patterns, layout, w, q, B, n, L, max_combinations=3,
-                 max_patterns = 3, prioritize = 'time'):
+                 max_patterns = 3, prioritize = 'time', qt=None):
     '''
     Finds the best possible slitter schedule by linear optimization of a set of
     patterns.
@@ -301,6 +299,11 @@ def find_optimum(patterns, layout, w, q, B, n, L, max_combinations=3,
         only relevant when max_patterns < 4. When max_patterns < 4 either the
         lowest material waste linear opimization of patterns is returned
         ('material loss') or the fewest mother rolls used is returned ('time')
+    qt: list
+        default: None. List of the true values for q if algorithm is called
+        using an adjusted production target. This is used to set the output
+        results inventory to the true inventory created as a result of the
+        true order
 
     Returns
     -------
@@ -315,6 +318,8 @@ def find_optimum(patterns, layout, w, q, B, n, L, max_combinations=3,
         count pairs that describe the pattern for every pattern in the deckle
         schedule
     '''
+    if qt == None:
+        qt = q
     if prioritize == 'material loss':
         inv_loss = 0
     elif prioritize == 'time':
@@ -422,7 +427,7 @@ def find_optimum(patterns, layout, w, q, B, n, L, max_combinations=3,
         print('Error')
         print(result['message'])
         return 0
-    return output_results(result, lhs_ineq, B, w, n, q, L)
+    return output_results(result, lhs_ineq, B, w, n, qt, L)
 
 def BinPackingExample(w, q):
     """
