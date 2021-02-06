@@ -51,7 +51,13 @@ def seed_patterns(w, q, B, n, max_combinations=3, goal=3, verbiose=True):
         print("{} possible max {} combinations".format(len(combos),max_combinations))
     patterns = []
     for combo in combos:
-
+        # knapsack/store_patterns will only find one solution (0?) if
+        # the width is over half the length of the bin
+        if len(combo) == 1:
+            if B / combo[0] < 2:
+                sub_goal = 1
+        else:
+            sub_goal = goal
         # only provide knapsack with relevant variables
         s = []
         for i in combo:
@@ -59,7 +65,7 @@ def seed_patterns(w, q, B, n, max_combinations=3, goal=3, verbiose=True):
         t = initt(B,len(s))
         knapsack(s, s, B, len(s), t)
         t = np.array(t)
-        patterns += store_patterns(t, s, B, goal=goal)
+        patterns += store_patterns(t, s, B, goal=sub_goal)
         for j in range(3):
             for i in patterns:
                 for key in list(i[0].keys()):
