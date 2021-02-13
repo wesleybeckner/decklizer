@@ -8,6 +8,9 @@ import time
 from collections import Counter
 import itertools
 from scipy.optimize import linprog
+import sys
+
+sys.setrecursionlimit(int(1e4))
 
 def seed_patterns(w, q, B, n, max_combinations=3, goal=3, verbiose=True):
     '''
@@ -51,11 +54,20 @@ def seed_patterns(w, q, B, n, max_combinations=3, goal=3, verbiose=True):
         print("{} possible max {} combinations".format(len(combos),max_combinations))
     patterns = []
     for combo in combos:
+        # due to the naive soln, combos of len 1 should be skipped.
+
         # knapsack/store_patterns will only find one solution (0?) if
         # the width is over half the length of the bin
         if len(combo) == 1:
-            if B / combo[0] < 2:
-                sub_goal = 1
+            sub_goal = 1
+
+        # arbitrary conditional
+        elif sum(combo) > (B - min(combo)):
+            sub_goal = 1
+            # if B / combo[0] < 2:
+            #     sub_goal = 1
+            # else:
+            #     sub_goal = goal
         else:
             sub_goal = goal
         # only provide knapsack with relevant variables
@@ -113,10 +125,10 @@ def knapsack(wt, val, W, n, t):
 
 def store_patterns(t, s, B, goal=5):
     patterns = []
-    bit = 0
-    while len(patterns) < goal:
+    bit = 1
+    while (len(patterns) < goal):
         found = 0
-        for pair in np.argwhere(t == t.max()-bit):
+        for pair in np.argwhere(t == t.flatten()[t.flatten().argsort()[-bit]]):
             N, W = pair
             sack = reconstruct(N, W, t, s)
             pattern = Counter(np.array(s)[list(sack)])
@@ -129,7 +141,7 @@ def store_patterns(t, s, B, goal=5):
             found += 1
             if found > 1:
                 break
-        bit += 2
+        bit += 1
     return patterns
 
 def reconstruct(i, w, kp_soln, weight_of_item):
