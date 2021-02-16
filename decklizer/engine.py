@@ -190,6 +190,11 @@ def make_best_pattern(q, w, n, usable_width=4160, verbiose=True):
     layout: list
         cuts for jumbo for each width (no width is excluded)
     """
+
+    # if not all slits can fit in a single bin, do not return a single optimum layout
+    if np.sum([n,w]) > usable_width:
+        return None
+
     layout = [max(1, math.floor(i/sum(q)*usable_width/j)) for i,j in zip(q,w)]
 
 
@@ -199,9 +204,8 @@ def make_best_pattern(q, w, n, usable_width=4160, verbiose=True):
                                                         < 0) else -1 for i,j in zip(q,w) ]
     order = np.argsort(remainder)
     # sometimes the floor still puts us over
-    for i in range(3):
-        if usable_width - sum([i*j for i,j in zip(layout,w)]) < 0:
-            layout[np.argmax(layout)] -= 1
+    while usable_width - sum([i*j for i,j in zip(layout,w)]) < 0:
+        layout[np.argmax(layout)] -= 1
 
     while (usable_width - sum([i*j for i,j in zip(layout,w)])) > min(w):
         for i in order[::-1]:
@@ -344,7 +348,7 @@ def find_optimum(patterns, layout, w, q, B, n, L, max_combinations=3,
         inv_loss = 1
     if 1 < max_patterns < 4:
         # find best of X combination
-        if len(w) <= max_combinations:
+        if (len(w) <= max_combinations) and (layout != None):
             pattern_combos = list(itertools.combinations(patterns,r=max_patterns-1))
         else:
             pattern_combos = list(itertools.combinations(patterns,r=max_patterns))
@@ -363,7 +367,7 @@ def find_optimum(patterns, layout, w, q, B, n, L, max_combinations=3,
                 lhs_ineq.append(inset)
         #     naive = init_layouts(B, w)
         #     lhs_ineq = lhs_ineq + naive
-            if len(w) <= max_combinations:
+            if (len(w) <= max_combinations) and (layout != None):
                 lhs_ineq.append([-i for i in layout])
             lhs_ineq = np.array(lhs_ineq).T.tolist()
             rhs_ineq = [-i for i in q]
@@ -431,7 +435,7 @@ def find_optimum(patterns, layout, w, q, B, n, L, max_combinations=3,
     # naive = init_layouts(B, w)
     # lhs_ineq = lhs_ineq + naive
 
-    if len(w) <= max_combinations:
+    if (len(w) <= max_combinations) and (layout != None):
         lhs_ineq.append([-i for i in layout])
     lhs_ineq = np.array(lhs_ineq).T.tolist()
     rhs_ineq = [-i for i in q]
